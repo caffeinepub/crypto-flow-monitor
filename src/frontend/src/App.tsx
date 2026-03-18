@@ -33,7 +33,7 @@ function Dashboard() {
         />
 
         <main className="max-w-[1600px] mx-auto px-4 py-4">
-          {/* Dashboard: full layout */}
+          {/* Dashboard: exclusivo BTC */}
           {activeTab === "dashboard" && (
             <>
               <div className="mb-4">
@@ -45,14 +45,10 @@ function Dashboard() {
                   loading={loading}
                 />
               </div>
-              <div className="flex flex-col xl:flex-row gap-4">
-                <div className="flex-1 min-w-0" style={{ flex: "0 0 65%" }}>
-                  <BTCPanel metrics={btcMetrics} loading={loading} />
-                </div>
-                <div className="xl:w-[35%] min-w-0">
-                  <AltcoinScanner altcoins={altcoins} loading={loading} />
-                </div>
+              <div className="mb-4">
+                <BTCLiquidationComparison />
               </div>
+              <BTCPanel metrics={btcMetrics} loading={loading} />
             </>
           )}
 
