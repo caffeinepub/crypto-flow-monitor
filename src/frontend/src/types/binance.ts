@@ -63,6 +63,7 @@ export interface AltcoinOpportunity {
   tp2?: number;
   tp3?: number;
   stopLoss?: number;
+  timeframeUsed?: string;
 }
 
 export interface BTCMetrics {

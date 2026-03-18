@@ -127,30 +127,31 @@ export function calculateTakeProfits(
   return { tp1: allAbove[0], tp2: allAbove[1], tp3: allAbove[2] };
 }
 
-// Find stop loss: one candle low below last swing low before entry
+/**
+ * Calculate stop loss: placed 0.5% below the last pivot low (swing low)
+ * that is below the entry price, searching from most recent candle backward.
+ *
+ * No percentage clamping -- the market structure defines the SL.
+ * Returns null if no pivot low found (caller should try another timeframe).
+ */
 export function calculateStopLoss(
   klines: KlineData[],
   entryPrice: number,
-): number {
-  let lastSwingLow: number | null = null;
-  const recent = klines.slice(-50);
-
-  for (let i = recent.length - 3; i >= 1; i--) {
-    const l = recent[i].low;
-    if (l < entryPrice && l < recent[i - 1].low && l < recent[i + 1].low) {
-      lastSwingLow = l;
-      break;
+): number | null {
+  // Search from most recent to oldest for the last pivot low below entry
+  for (let i = klines.length - 3; i >= 2; i--) {
+    const l = klines[i].low;
+    if (
+      l < entryPrice &&
+      l < klines[i - 1].low &&
+      l < klines[i - 2].low &&
+      l < klines[i + 1].low &&
+      l < klines[i + 2].low
+    ) {
+      // Place SL 0.5% below the last swing low
+      return l * 0.995;
     }
   }
-
-  let sl: number;
-  if (lastSwingLow !== null) {
-    sl = lastSwingLow * 0.995;
-  } else {
-    sl = entryPrice * 0.85;
-  }
-
-  const minSL = entryPrice * 0.67;
-  const maxSL = entryPrice * 0.9;
-  return Math.max(minSL, Math.min(maxSL, sl));
+  // No pivot low found in this timeframe
+  return null;
 }

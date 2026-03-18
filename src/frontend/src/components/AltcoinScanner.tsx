@@ -83,12 +83,11 @@ function TPSLPanel({ alt }: { alt: AltcoinOpportunity }) {
     );
   }
 
-  const rr =
-    alt.tp2 !== undefined &&
-    alt.stopLoss !== undefined &&
-    entry - alt.stopLoss > 0
-      ? ((alt.tp2 - entry) / (entry - alt.stopLoss)).toFixed(1)
-      : "—";
+  const risk = entry - (alt.stopLoss ?? entry);
+  const reward = (alt.tp2 ?? entry) - entry;
+  const rrNum = risk > 0 ? reward / risk : 0;
+  const rr = rrNum > 0 ? rrNum.toFixed(1) : "—";
+  const rrColor = rrNum >= 3 ? "#22C55E" : rrNum >= 2 ? "#EAB308" : "#EF4444";
 
   return (
     <motion.div
@@ -230,13 +229,18 @@ function TPSLPanel({ alt }: { alt: AltcoinOpportunity }) {
             </div>
             <div
               className="text-xs font-bold font-mono"
-              style={{ color: "#EAB308" }}
+              style={{ color: rrColor }}
             >
               {rr}x
             </div>
             <div className="text-xs" style={{ color: "#EAB30899" }}>
               R:R ratio
             </div>
+            {alt.timeframeUsed && (
+              <div className="text-xs" style={{ color: "#9AA7B6" }}>
+                TF: {alt.timeframeUsed}
+              </div>
+            )}
           </div>
         </div>
       </div>

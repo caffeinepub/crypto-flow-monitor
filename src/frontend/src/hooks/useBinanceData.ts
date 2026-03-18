@@ -89,6 +89,11 @@ function scoreAltcoin(
   return Math.min(score, 100);
 }
 
+// Timeframe progression: smaller TFs tighten the SL (better R:R if TPs are fixed),
+// larger TFs widen it to find a deeper structural low.
+// Order: start at 15m, try smaller first (5m, 3m, 1m), then larger (30m, 1h)
+const TF_SEARCH_ORDER = ["5m", "3m", "1m", "30m", "1h"] as const;
+
 export function useBinanceData(interval: Interval = "1h") {
   const [btcMetrics, setBtcMetrics] = useState<BTCMetrics | null>(null);
   const [altcoins, setAltcoins] = useState<AltcoinOpportunity[]>([]);
@@ -201,37 +206,94 @@ export function useBinanceData(interval: Interval = "1h") {
         )
         .slice(0, 20);
 
-      // Fetch klines for top 10 alts in parallel and compute TP/SL
+      // Enrich top 10 with TP/SL using structural market analysis
       const top10 = opportunities.slice(0, 10);
-      const klinesResults = await Promise.allSettled(
-        top10.map((alt) => fetchKlines(`${alt.symbol}USDT`, interval, 100)),
-      );
 
-      const enriched = top10.map((alt, i) => {
-        const result = klinesResults[i];
-        if (result.status === "fulfilled") {
-          const altKlines = result.value;
+      const enriched = await Promise.all(
+        top10.map(async (alt) => {
+          let klines15m: KlineData[];
+          try {
+            klines15m = await fetchKlines(`${alt.symbol}USDT`, "15m", 200);
+          } catch {
+            return alt;
+          }
+
           const resistanceLevels = calculateResistanceLevels(
-            altKlines,
+            klines15m,
             alt.price,
           );
           const { tp1, tp2, tp3 } = calculateTakeProfits(
             resistanceLevels,
             alt.price,
           );
-          const stopLoss = calculateStopLoss(altKlines, alt.price);
+
+          const calcRR = (sl: number) => {
+            const risk = alt.price - sl;
+            if (risk <= 0) return 0;
+            return (tp2 - alt.price) / risk;
+          };
+
+          // Step 1: Calculate SL from 15m structural low (last swing low below entry)
+          let stopLoss = calculateStopLoss(klines15m, alt.price);
+          let timeframeUsed = "15m";
+          let bestRR = stopLoss !== null ? calcRR(stopLoss) : 0;
+
+          // Step 2: If R:R < 1:3 or no SL found, search other timeframes
+          // Try smaller TFs first (tighter SL = better R:R), then larger TFs
+          if (bestRR < 3 || stopLoss === null) {
+            let bestSL = stopLoss;
+            let bestTF = timeframeUsed;
+
+            for (const tf of TF_SEARCH_ORDER) {
+              try {
+                const tfKlines = await fetchKlines(
+                  `${alt.symbol}USDT`,
+                  tf,
+                  200,
+                );
+                const sl = calculateStopLoss(tfKlines, alt.price);
+                if (sl === null) continue;
+
+                const rr = calcRR(sl);
+                // Accept this TF if it gives a better R:R
+                if (rr > bestRR) {
+                  bestRR = rr;
+                  bestSL = sl;
+                  bestTF = tf;
+                }
+                // Stop searching once we achieve >= 1:3
+                if (rr >= 3) break;
+              } catch {
+                // skip this timeframe
+              }
+            }
+
+            if (bestSL !== null) {
+              stopLoss = bestSL;
+              timeframeUsed = bestTF;
+            }
+          }
+
+          // Fallback: if no pivot low found in any TF, use 15m candle lows minimum
+          if (stopLoss === null) {
+            const recentLows = klines15m.slice(-20).map((k) => k.low);
+            const minLow = Math.min(...recentLows);
+            stopLoss = minLow * 0.995;
+            timeframeUsed = "15m";
+          }
+
           return {
             ...alt,
-            klines: altKlines,
+            klines: klines15m,
             resistanceLevels,
             tp1,
             tp2,
             tp3,
             stopLoss,
+            timeframeUsed,
           };
-        }
-        return alt;
-      });
+        }),
+      );
 
       const finalOpportunities = [...enriched, ...opportunities.slice(10)];
       setAltcoins(finalOpportunities);
