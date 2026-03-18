@@ -1,0 +1,148 @@
+import { Download, Smartphone, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useState } from "react";
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
+
+export function PWAInstallPrompt() {
+  const [deferredPrompt, setDeferredPrompt] =
+    useState<BeforeInstallPromptEvent | null>(null);
+  const [show, setShow] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(false);
+
+  useEffect(() => {
+    // Check if already running as PWA
+    if (window.matchMedia("(display-mode: standalone)").matches) {
+      setIsInstalled(true);
+      return;
+    }
+
+    // Check if user dismissed before
+    const wasDismissed = localStorage.getItem("pwa-dismissed");
+    if (wasDismissed) return;
+
+    // Detect iOS
+    const ios =
+      /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase()) &&
+      !(window as unknown as { MSStream?: unknown }).MSStream;
+    setIsIOS(ios);
+
+    if (ios) {
+      // Show iOS manual install hint after 3s
+      const timer = setTimeout(() => setShow(true), 3000);
+      return () => clearTimeout(timer);
+    }
+
+    // Android / Desktop: listen for beforeinstallprompt
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e as BeforeInstallPromptEvent);
+      setTimeout(() => setShow(true), 2000);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  const handleInstall = async () => {
+    if (!deferredPrompt) return;
+    await deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === "accepted") {
+      setIsInstalled(true);
+    }
+    setShow(false);
+    setDeferredPrompt(null);
+  };
+
+  const handleDismiss = () => {
+    setShow(false);
+    setDismissed(true);
+    localStorage.setItem("pwa-dismissed", "1");
+  };
+
+  if (isInstalled || dismissed || !show) return null;
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ y: 100, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 100, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+        className="fixed bottom-4 left-4 right-4 z-50 mx-auto max-w-sm"
+      >
+        <div
+          className="rounded-2xl p-4 flex items-start gap-3 shadow-2xl"
+          style={{
+            background: "rgba(7,11,16,0.97)",
+            border: "1px solid rgba(34,211,238,0.3)",
+            boxShadow:
+              "0 0 30px rgba(34,211,238,0.15), 0 20px 60px rgba(0,0,0,0.8)",
+          }}
+        >
+          <div
+            className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
+            style={{
+              background: "linear-gradient(135deg, #22D3EE22, #3B82F622)",
+              border: "1px solid #22D3EE44",
+            }}
+          >
+            <Smartphone className="w-6 h-6" style={{ color: "#22D3EE" }} />
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm text-white mb-0.5">
+              Instalar Crypto Flow Monitor
+            </p>
+            {isIOS ? (
+              <p className="text-xs" style={{ color: "#9AA7B6" }}>
+                Toque em{" "}
+                <span className="font-bold" style={{ color: "#22D3EE" }}>
+                  Compartilhar
+                </span>{" "}
+                e depois{" "}
+                <span className="font-bold" style={{ color: "#22D3EE" }}>
+                  Adicionar à Tela Inicial
+                </span>
+              </p>
+            ) : (
+              <p className="text-xs" style={{ color: "#9AA7B6" }}>
+                Instale como app nativo — sem browser, direto na área de
+                trabalho
+              </p>
+            )}
+
+            {!isIOS && (
+              <button
+                type="button"
+                onClick={handleInstall}
+                className="mt-2.5 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200"
+                style={{
+                  background: "rgba(34,211,238,0.15)",
+                  border: "1px solid rgba(34,211,238,0.4)",
+                  color: "#22D3EE",
+                }}
+              >
+                <Download className="w-3.5 h-3.5" />
+                Instalar agora
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleDismiss}
+            className="p-1 rounded-lg hover:bg-white/10 transition-colors shrink-0"
+          >
+            <X className="w-4 h-4" style={{ color: "#9AA7B6" }} />
+          </button>
+        </div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}

@@ -5,6 +5,7 @@ import { BTCPanel } from "./components/BTCPanel";
 import { CircuitBackground } from "./components/CircuitBackground";
 import { DollarFlow } from "./components/DollarFlow";
 import { Header } from "./components/Header";
+import { PWAInstallPrompt } from "./components/PWAInstallPrompt";
 import { useBinanceData } from "./hooks/useBinanceData";
 import type { Interval } from "./types/binance";
 
@@ -67,6 +68,9 @@ function Dashboard() {
           </p>
         </footer>
       </div>
+
+      {/* PWA Install Prompt */}
+      <PWAInstallPrompt />
     </div>
   );
 }
