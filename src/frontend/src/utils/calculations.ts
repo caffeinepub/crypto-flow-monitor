@@ -1,3 +1,5 @@
+import type { KlineData } from "../types/binance";
+
 export const calculateRSI = (closes: number[], period = 14): number => {
   if (closes.length < period + 1) return 50;
   let gains = 0;
@@ -46,3 +48,109 @@ export const formatVolume = (vol: number): string => {
 export const formatFundingRate = (rate: number): string => {
   return `${(rate * 100).toFixed(4)}%`;
 };
+
+// Find pivot highs (resistance levels) above entry price from klines
+export function calculateResistanceLevels(
+  klines: KlineData[],
+  entryPrice: number,
+): number[] {
+  const pivotHighs: number[] = [];
+  for (let i = 2; i < klines.length - 2; i++) {
+    const h = klines[i].high;
+    if (
+      h > klines[i - 1].high &&
+      h > klines[i - 2].high &&
+      h > klines[i + 1].high &&
+      h > klines[i + 2].high &&
+      h > entryPrice * 1.005
+    ) {
+      pivotHighs.push(h);
+    }
+  }
+  const deduped: number[] = [];
+  for (const h of pivotHighs.sort((a, b) => a - b)) {
+    if (
+      deduped.length === 0 ||
+      (h - deduped[deduped.length - 1]) / deduped[deduped.length - 1] > 0.005
+    ) {
+      deduped.push(h);
+    }
+  }
+  return deduped.slice(0, 5);
+}
+
+// Calculate TP1, TP2, TP3 from resistance levels
+export function calculateTakeProfits(
+  resistanceLevels: number[],
+  entryPrice: number,
+): { tp1: number; tp2: number; tp3: number } {
+  const strongResistances = resistanceLevels.filter(
+    (r) => r > entryPrice * 1.03,
+  );
+
+  if (strongResistances.length >= 3) {
+    return {
+      tp1: strongResistances[0],
+      tp2: strongResistances[1],
+      tp3: strongResistances[2],
+    };
+  }
+
+  const allAbove = resistanceLevels.filter((r) => r > entryPrice * 1.005);
+
+  if (allAbove.length === 0) {
+    return {
+      tp1: entryPrice * 1.03,
+      tp2: entryPrice * 1.06,
+      tp3: entryPrice * 1.1,
+    };
+  }
+
+  if (allAbove.length === 1) {
+    const r = allAbove[0];
+    const gap = r - entryPrice;
+    return {
+      tp1: entryPrice + gap * 0.33,
+      tp2: entryPrice + gap * 0.66,
+      tp3: r,
+    };
+  }
+
+  if (allAbove.length === 2) {
+    return {
+      tp1: allAbove[0],
+      tp2: (allAbove[0] + allAbove[1]) / 2,
+      tp3: allAbove[1],
+    };
+  }
+
+  return { tp1: allAbove[0], tp2: allAbove[1], tp3: allAbove[2] };
+}
+
+// Find stop loss: one candle low below last swing low before entry
+export function calculateStopLoss(
+  klines: KlineData[],
+  entryPrice: number,
+): number {
+  let lastSwingLow: number | null = null;
+  const recent = klines.slice(-50);
+
+  for (let i = recent.length - 3; i >= 1; i--) {
+    const l = recent[i].low;
+    if (l < entryPrice && l < recent[i - 1].low && l < recent[i + 1].low) {
+      lastSwingLow = l;
+      break;
+    }
+  }
+
+  let sl: number;
+  if (lastSwingLow !== null) {
+    sl = lastSwingLow * 0.995;
+  } else {
+    sl = entryPrice * 0.85;
+  }
+
+  const minSL = entryPrice * 0.67;
+  const maxSL = entryPrice * 0.9;
+  return Math.max(minSL, Math.min(maxSL, sl));
+}

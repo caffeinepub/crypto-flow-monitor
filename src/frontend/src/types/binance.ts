@@ -57,6 +57,12 @@ export interface AltcoinOpportunity {
   score: number;
   highPrice: string;
   lowPrice: string;
+  klines?: KlineData[];
+  resistanceLevels?: number[];
+  tp1?: number;
+  tp2?: number;
+  tp3?: number;
+  stopLoss?: number;
 }
 
 export interface BTCMetrics {

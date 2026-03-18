@@ -1,11 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Clock, Globe } from "lucide-react";
 import { useState } from "react";
 import { AltcoinScanner } from "./components/AltcoinScanner";
+import { BTCLiquidationComparison } from "./components/BTCLiquidationComparison";
 import { BTCPanel } from "./components/BTCPanel";
+import { BTCThermometer } from "./components/BTCThermometer";
 import { CircuitBackground } from "./components/CircuitBackground";
 import { DollarFlow } from "./components/DollarFlow";
 import { Header } from "./components/Header";
-import { LiquidationFeed } from "./components/LiquidationFeed";
 import { PWAInstallPrompt } from "./components/PWAInstallPrompt";
 import { useBinanceData } from "./hooks/useBinanceData";
 import type { Interval } from "./types/binance";
@@ -31,28 +33,88 @@ function Dashboard() {
         />
 
         <main className="max-w-[1600px] mx-auto px-4 py-4">
-          {/* Dollar Flow */}
-          <div className="mb-4">
-            <DollarFlow btcMetrics={btcMetrics} altcoins={altcoins} />
-          </div>
+          {/* Dashboard: full layout */}
+          {activeTab === "dashboard" && (
+            <>
+              <div className="mb-4">
+                <DollarFlow btcMetrics={btcMetrics} altcoins={altcoins} />
+              </div>
+              <div className="mb-4">
+                <BTCThermometer
+                  score={btcMetrics?.reversalScore ?? 0}
+                  loading={loading}
+                />
+              </div>
+              <div className="flex flex-col xl:flex-row gap-4">
+                <div className="flex-1 min-w-0" style={{ flex: "0 0 65%" }}>
+                  <BTCPanel metrics={btcMetrics} loading={loading} />
+                </div>
+                <div className="xl:w-[35%] min-w-0">
+                  <AltcoinScanner altcoins={altcoins} loading={loading} />
+                </div>
+              </div>
+            </>
+          )}
 
-          {/* Liquidation Feed */}
-          <div className="mb-4">
-            <LiquidationFeed />
-          </div>
-
-          {/* Main content: BTC (65%) + Scanner (35%) */}
-          <div className="flex flex-col xl:flex-row gap-4">
-            {/* BTC Panel */}
-            <div className="flex-1 min-w-0" style={{ flex: "0 0 65%" }}>
-              <BTCPanel metrics={btcMetrics} loading={loading} />
-            </div>
-
-            {/* Altcoin Scanner */}
-            <div className="xl:w-[35%] min-w-0">
+          {/* Scanner: full-width altcoin scanner */}
+          {activeTab === "scanner" && (
+            <div className="w-full">
               <AltcoinScanner altcoins={altcoins} loading={loading} />
             </div>
-          </div>
+          )}
+
+          {/* BTC Analysis: Thermometer + Liquidation Comparison + BTCPanel */}
+          {activeTab === "btc" && (
+            <div className="space-y-4">
+              <BTCThermometer
+                score={btcMetrics?.reversalScore ?? 0}
+                loading={loading}
+              />
+              <BTCLiquidationComparison />
+              <BTCPanel metrics={btcMetrics} loading={loading} />
+            </div>
+          )}
+
+          {/* Market: placeholder */}
+          {activeTab === "market" && (
+            <div
+              className="rounded-xl flex flex-col items-center justify-center py-24"
+              style={{ background: "#0F1622", border: "2px solid #1F2A3A" }}
+              data-ocid="market.panel"
+            >
+              <div
+                className="w-16 h-16 rounded-full flex items-center justify-center mb-6"
+                style={{
+                  background: "rgba(34,211,238,0.1)",
+                  border: "1px solid rgba(34,211,238,0.3)",
+                }}
+              >
+                <Globe className="w-8 h-8" style={{ color: "#22D3EE" }} />
+              </div>
+              <h2
+                className="text-2xl font-bold mb-2 tracking-wider"
+                style={{ color: "#E7EEF8" }}
+              >
+                Em Breve
+              </h2>
+              <p className="text-sm mb-1" style={{ color: "#22D3EE" }}>
+                Análise de Mercado
+              </p>
+              <p
+                className="text-xs text-center max-w-md px-4"
+                style={{ color: "#9AA7B6" }}
+              >
+                Análise descritiva do momento do mercado, últimos acontecimentos
+                e movimentos institucionais significativos. Em desenvolvimento.
+              </p>
+              <div className="mt-8 flex items-center gap-2">
+                <Clock className="w-4 h-4" style={{ color: "#9AA7B6" }} />
+                <span className="text-xs" style={{ color: "#9AA7B6" }}>
+                  Disponível em breve
+                </span>
+              </div>
+            </div>
+          )}
         </main>
 
         {/* Footer */}

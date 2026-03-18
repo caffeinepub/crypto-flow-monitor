@@ -90,7 +90,11 @@ export function LiquidationFeed() {
   return (
     <div
       className="rounded-lg p-4"
-      style={{ background: "#0F1622", border: "2px solid #1F2A3A" }}
+      style={{
+        background: "#0F1622",
+        border: "2px solid #1F2A3A",
+        overflow: "hidden",
+      }}
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
@@ -197,29 +201,31 @@ export function LiquidationFeed() {
       </div>
 
       {/* Liquidation list */}
-      <ScrollArea style={{ maxHeight: 200 }}>
-        <AnimatePresence initial={false}>
-          {liquidations.length === 0 ? (
-            <div
-              className="text-center py-8"
-              style={{ color: "#9AA7B6" }}
-              data-ocid="liquidation.empty_state"
-            >
-              <span className="text-xs">Aguardando liquidações...</span>
-            </div>
-          ) : (
-            liquidations
-              .slice(0, 50)
-              .map((liq, i) => (
-                <LiquidationRow
-                  key={`${liq.symbol}-${liq.time}-${i}`}
-                  liq={liq}
-                  index={i}
-                />
-              ))
-          )}
-        </AnimatePresence>
-      </ScrollArea>
+      <div style={{ maxHeight: 200, overflow: "hidden" }}>
+        <ScrollArea style={{ maxHeight: 200 }}>
+          <AnimatePresence initial={false}>
+            {liquidations.length === 0 ? (
+              <div
+                className="text-center py-8"
+                style={{ color: "#9AA7B6" }}
+                data-ocid="liquidation.empty_state"
+              >
+                <span className="text-xs">Aguardando liquidações...</span>
+              </div>
+            ) : (
+              liquidations
+                .slice(0, 50)
+                .map((liq, i) => (
+                  <LiquidationRow
+                    key={`${liq.symbol}-${liq.time}-${i}`}
+                    liq={liq}
+                    index={i}
+                  />
+                ))
+            )}
+          </AnimatePresence>
+        </ScrollArea>
+      </div>
     </div>
   );
 }

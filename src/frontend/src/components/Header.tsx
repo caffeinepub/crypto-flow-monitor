@@ -1,4 +1,4 @@
-import { Activity, RefreshCw } from "lucide-react";
+import { Activity, BarChart3, RefreshCw, Scan, TrendingUp } from "lucide-react";
 import { motion } from "motion/react";
 
 interface HeaderProps {
@@ -17,9 +17,10 @@ export function Header({
   onTabChange,
 }: HeaderProps) {
   const tabs = [
-    { id: "dashboard", label: "Dashboard" },
-    { id: "scanner", label: "Scanner" },
-    { id: "btc", label: "BTC Analysis" },
+    { id: "dashboard", label: "Dashboard", icon: Activity },
+    { id: "scanner", label: "Scanner", icon: Scan },
+    { id: "btc", label: "BTC Analysis", icon: TrendingUp },
+    { id: "market", label: "Mercado", icon: BarChart3 },
   ];
 
   return (
@@ -46,54 +47,66 @@ export function Header({
               boxShadow: "0 0 12px rgba(34,211,238,0.2)",
             }}
           >
-            <Activity className="w-4 h-4 text-neon-cyan" />
+            <Activity className="w-4 h-4" style={{ color: "#22D3EE" }} />
           </div>
-          <span className="font-bold text-lg tracking-widest text-neon-cyan">
+          <span
+            className="font-bold text-lg tracking-widest"
+            style={{ color: "#22D3EE" }}
+          >
             CFM
           </span>
-          <span className="text-xs text-muted-foreground hidden sm:block">
+          <span
+            className="text-xs hidden sm:block"
+            style={{ color: "#9AA7B6" }}
+          >
             Crypto Futures Monitor
           </span>
         </motion.div>
 
         <nav className="flex items-center gap-1" data-ocid="nav.tab">
-          {tabs.map((tab) => (
-            <button
-              type="button"
-              key={tab.id}
-              onClick={() => onTabChange(tab.id)}
-              data-ocid={`nav.${tab.id}.link`}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${
-                activeTab === tab.id
-                  ? "text-neon-cyan"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-              style={
-                activeTab === tab.id
-                  ? {
-                      background: "rgba(34,211,238,0.1)",
-                      boxShadow: "0 0 10px rgba(34,211,238,0.15)",
-                    }
-                  : {}
-              }
-            >
-              {tab.label}
-            </button>
-          ))}
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                type="button"
+                key={tab.id}
+                onClick={() => onTabChange(tab.id)}
+                data-ocid={`nav.${tab.id}.link`}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200"
+                style={{
+                  color: isActive ? "#22D3EE" : "#9AA7B6",
+                  background: isActive ? "rgba(34,211,238,0.1)" : "transparent",
+                  boxShadow: isActive
+                    ? "0 0 10px rgba(34,211,238,0.15)"
+                    : "none",
+                }}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{tab.label}</span>
+              </button>
+            );
+          })}
         </nav>
 
         <div className="flex items-center gap-3 shrink-0">
           {lastUpdate && (
-            <span className="text-xs text-muted-foreground hidden md:block">
+            <span
+              className="text-xs hidden md:block"
+              style={{ color: "#9AA7B6" }}
+            >
               Atualizado {lastUpdate.toLocaleTimeString("pt-BR")}
             </span>
           )}
           <div className="flex items-center gap-1.5">
             <span
-              className="w-2 h-2 rounded-full animate-pulse-glow"
+              className="w-2 h-2 rounded-full animate-pulse"
               style={{ backgroundColor: "#22C55E" }}
             />
-            <span className="text-xs text-neon-green hidden sm:block">
+            <span
+              className="text-xs hidden sm:block"
+              style={{ color: "#22C55E" }}
+            >
               LIVE
             </span>
           </div>
@@ -105,7 +118,8 @@ export function Header({
             disabled={loading}
           >
             <RefreshCw
-              className={`w-4 h-4 text-muted-foreground ${loading ? "animate-spin" : ""}`}
+              className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+              style={{ color: "#9AA7B6" }}
             />
           </button>
         </div>

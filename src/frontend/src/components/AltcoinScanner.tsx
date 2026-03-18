@@ -1,5 +1,7 @@
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { motion } from "motion/react";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { useState } from "react";
 import type { AltcoinOpportunity } from "../types/binance";
 import {
   formatFundingRate,
@@ -63,14 +65,199 @@ function CoinAvatar({ symbol }: { symbol: string }) {
 
 const SKELETON_IDS = ["sk1", "sk2", "sk3", "sk4", "sk5", "sk6", "sk7", "sk8"];
 
+function pct(a: number, b: number) {
+  return (((a - b) / b) * 100).toFixed(2);
+}
+
+function TPSLPanel({ alt }: { alt: AltcoinOpportunity }) {
+  const entry = alt.price;
+
+  if (alt.tp1 === undefined) {
+    return (
+      <div
+        className="px-3 py-2 text-xs"
+        style={{ color: "#9AA7B6", borderTop: "1px solid #1F2A3A" }}
+      >
+        Aguardando dados de klines...
+      </div>
+    );
+  }
+
+  const rr =
+    alt.tp2 !== undefined &&
+    alt.stopLoss !== undefined &&
+    entry - alt.stopLoss > 0
+      ? ((alt.tp2 - entry) / (entry - alt.stopLoss)).toFixed(1)
+      : "—";
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: "auto" }}
+      exit={{ opacity: 0, height: 0 }}
+      transition={{ duration: 0.2 }}
+      className="overflow-hidden"
+    >
+      <div className="px-3 py-3" style={{ borderTop: "1px solid #1F2A3A" }}>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
+          {/* Entry */}
+          <div
+            className="rounded-lg px-2 py-1.5"
+            style={{
+              background: "rgba(59,130,246,0.08)",
+              border: "1px solid rgba(59,130,246,0.3)",
+            }}
+          >
+            <div className="text-xs mb-0.5" style={{ color: "#9AA7B6" }}>
+              Entrada
+            </div>
+            <div
+              className="text-xs font-bold font-mono"
+              style={{ color: "#3B82F6" }}
+            >
+              {formatPrice(entry)}
+            </div>
+          </div>
+
+          {/* TP1 */}
+          {alt.tp1 !== undefined && (
+            <div
+              className="rounded-lg px-2 py-1.5"
+              style={{
+                background: "rgba(34,197,94,0.08)",
+                border: "1px solid rgba(34,197,94,0.3)",
+              }}
+            >
+              <div className="text-xs mb-0.5" style={{ color: "#9AA7B6" }}>
+                TP1
+              </div>
+              <div
+                className="text-xs font-bold font-mono"
+                style={{ color: "#22C55E" }}
+              >
+                {formatPrice(alt.tp1)}
+              </div>
+              <div className="text-xs" style={{ color: "#22C55E99" }}>
+                +{pct(alt.tp1, entry)}%
+              </div>
+            </div>
+          )}
+
+          {/* TP2 */}
+          {alt.tp2 !== undefined && (
+            <div
+              className="rounded-lg px-2 py-1.5"
+              style={{
+                background: "rgba(34,197,94,0.08)",
+                border: "1px solid rgba(34,197,94,0.3)",
+              }}
+            >
+              <div className="text-xs mb-0.5" style={{ color: "#9AA7B6" }}>
+                TP2
+              </div>
+              <div
+                className="text-xs font-bold font-mono"
+                style={{ color: "#22C55E" }}
+              >
+                {formatPrice(alt.tp2)}
+              </div>
+              <div className="text-xs" style={{ color: "#22C55E99" }}>
+                +{pct(alt.tp2, entry)}%
+              </div>
+            </div>
+          )}
+
+          {/* TP3 */}
+          {alt.tp3 !== undefined && (
+            <div
+              className="rounded-lg px-2 py-1.5"
+              style={{
+                background: "rgba(34,197,94,0.08)",
+                border: "1px solid rgba(34,197,94,0.3)",
+              }}
+            >
+              <div className="text-xs mb-0.5" style={{ color: "#9AA7B6" }}>
+                TP3
+              </div>
+              <div
+                className="text-xs font-bold font-mono"
+                style={{ color: "#22C55E" }}
+              >
+                {formatPrice(alt.tp3)}
+              </div>
+              <div className="text-xs" style={{ color: "#22C55E99" }}>
+                +{pct(alt.tp3, entry)}%
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          {/* Stop Loss */}
+          {alt.stopLoss !== undefined && (
+            <div
+              className="rounded-lg px-2 py-1.5 flex-1"
+              style={{
+                background: "rgba(239,68,68,0.08)",
+                border: "1px solid rgba(239,68,68,0.3)",
+              }}
+            >
+              <div className="text-xs mb-0.5" style={{ color: "#9AA7B6" }}>
+                Stop Loss
+              </div>
+              <div
+                className="text-xs font-bold font-mono"
+                style={{ color: "#EF4444" }}
+              >
+                {formatPrice(alt.stopLoss)}
+              </div>
+              <div className="text-xs" style={{ color: "#EF444499" }}>
+                {pct(alt.stopLoss, entry)}%
+              </div>
+            </div>
+          )}
+
+          {/* R/R Ratio */}
+          <div
+            className="rounded-lg px-2 py-1.5 flex-1"
+            style={{
+              background: "rgba(234,179,8,0.08)",
+              border: "1px solid rgba(234,179,8,0.3)",
+            }}
+          >
+            <div className="text-xs mb-0.5" style={{ color: "#9AA7B6" }}>
+              Risco/Retorno
+            </div>
+            <div
+              className="text-xs font-bold font-mono"
+              style={{ color: "#EAB308" }}
+            >
+              {rr}x
+            </div>
+            <div className="text-xs" style={{ color: "#EAB30899" }}>
+              R:R ratio
+            </div>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 export function AltcoinScanner({ altcoins, loading }: AltcoinScannerProps) {
+  const [expandedSymbol, setExpandedSymbol] = useState<string | null>(null);
+
   return (
     <motion.div
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.5, delay: 0.3 }}
       className="rounded-xl flex flex-col"
-      style={{ background: "#0F1622", border: "2px solid #1F2A3A" }}
+      style={{
+        background: "#0F1622",
+        border: "2px solid #1F2A3A",
+        overflow: "hidden",
+      }}
       data-ocid="scanner.panel"
     >
       <div className="p-4 border-b" style={{ borderColor: "#1F2A3A" }}>
@@ -83,7 +270,7 @@ export function AltcoinScanner({ altcoins, loading }: AltcoinScannerProps) {
               Altcoin Scanner
             </h2>
             <p className="text-xs mt-0.5" style={{ color: "#9AA7B6" }}>
-              Top oportunidades de reversão
+              Top oportunidades · Clique para ver TP/SL
             </p>
           </div>
           <div
@@ -108,7 +295,7 @@ export function AltcoinScanner({ altcoins, loading }: AltcoinScannerProps) {
           </div>
         </div>
         <div
-          className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-2 mt-3 text-xs uppercase tracking-wider"
+          className="grid grid-cols-[auto_1fr_auto_auto_auto_auto_auto] gap-2 mt-3 text-xs uppercase tracking-wider"
           style={{ color: "#9AA7B6" }}
         >
           <div className="w-7" />
@@ -117,12 +304,13 @@ export function AltcoinScanner({ altcoins, loading }: AltcoinScannerProps) {
           <div className="text-right">24h</div>
           <div className="text-right">FR</div>
           <div className="text-right">Score</div>
+          <div className="w-4" />
         </div>
       </div>
 
       <ScrollArea
         className="flex-1"
-        style={{ maxHeight: "calc(100vh - 280px)" }}
+        style={{ maxHeight: "calc(100vh - 300px)", minHeight: 200 }}
       >
         {loading ? (
           <div className="p-4 space-y-2" data-ocid="scanner.loading_state">
@@ -146,74 +334,101 @@ export function AltcoinScanner({ altcoins, loading }: AltcoinScannerProps) {
           <div className="p-2 space-y-1">
             {altcoins.map((alt, i) => {
               const s = getScoreStyle(alt.score);
+              const isExpanded = expandedSymbol === alt.symbol;
               return (
-                <motion.div
+                <div
                   key={alt.symbol}
-                  initial={{ opacity: 0, x: 10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.03, duration: 0.3 }}
-                  className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-2 items-center px-3 py-2 rounded-lg cursor-pointer transition-all"
+                  className="rounded-lg overflow-hidden"
                   style={{
                     background: s.bg,
                     border: `1px solid ${s.border}`,
-                    boxShadow: s.glow,
+                    boxShadow: isExpanded ? s.glow : "none",
                   }}
                   data-ocid={`scanner.item.${i + 1}`}
                 >
-                  <CoinAvatar symbol={alt.symbol} />
-                  <div>
-                    <div
-                      className="text-xs font-bold"
-                      style={{ color: "#E7EEF8" }}
-                    >
-                      {alt.symbol}
+                  <motion.div
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.03, duration: 0.3 }}
+                    className="grid grid-cols-[auto_1fr_auto_auto_auto_auto_auto] gap-2 items-center px-3 py-2 cursor-pointer transition-all hover:bg-white/5"
+                    onClick={() =>
+                      setExpandedSymbol(isExpanded ? null : alt.symbol)
+                    }
+                    data-ocid={`scanner.item.toggle.${i + 1}`}
+                  >
+                    <CoinAvatar symbol={alt.symbol} />
+                    <div>
+                      <div
+                        className="text-xs font-bold"
+                        style={{ color: "#E7EEF8" }}
+                      >
+                        {alt.symbol}
+                      </div>
+                      <div className="text-xs" style={{ color: "#9AA7B6" }}>
+                        {formatVolume(alt.volume24h)}
+                      </div>
                     </div>
-                    <div className="text-xs" style={{ color: "#9AA7B6" }}>
-                      {formatVolume(alt.volume24h)}
+                    <div className="text-right">
+                      <div
+                        className="text-xs font-mono"
+                        style={{ color: "#E7EEF8" }}
+                      >
+                        {formatPrice(alt.price)}
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <div
-                      className="text-xs font-mono"
-                      style={{ color: "#E7EEF8" }}
-                    >
-                      {formatPrice(alt.price)}
+                    <div className="text-right">
+                      <span
+                        className="text-xs font-mono font-bold"
+                        style={{
+                          color:
+                            alt.priceChange24h >= 0 ? "#22C55E" : "#EF4444",
+                        }}
+                      >
+                        {alt.priceChange24h >= 0 ? "+" : ""}
+                        {alt.priceChange24h.toFixed(1)}%
+                      </span>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <span
-                      className="text-xs font-mono font-bold"
-                      style={{
-                        color: alt.priceChange24h >= 0 ? "#22C55E" : "#EF4444",
-                      }}
-                    >
-                      {alt.priceChange24h >= 0 ? "+" : ""}
-                      {alt.priceChange24h.toFixed(1)}%
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <span
-                      className="text-xs font-mono"
-                      style={{
-                        color: alt.fundingRate < 0 ? "#22C55E" : "#EF4444",
-                      }}
-                    >
-                      {formatFundingRate(alt.fundingRate)}
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <span
-                      className="inline-flex items-center justify-center w-8 h-6 rounded text-xs font-bold"
-                      style={{
-                        background: `${s.badge}22`,
-                        color: s.badge,
-                        border: `1px solid ${s.badge}55`,
-                      }}
-                    >
-                      {alt.score}
-                    </span>
-                  </div>
-                </motion.div>
+                    <div className="text-right">
+                      <span
+                        className="text-xs font-mono"
+                        style={{
+                          color: alt.fundingRate < 0 ? "#22C55E" : "#EF4444",
+                        }}
+                      >
+                        {formatFundingRate(alt.fundingRate)}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span
+                        className="inline-flex items-center justify-center w-8 h-6 rounded text-xs font-bold"
+                        style={{
+                          background: `${s.badge}22`,
+                          color: s.badge,
+                          border: `1px solid ${s.badge}55`,
+                        }}
+                      >
+                        {alt.score}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-center">
+                      {isExpanded ? (
+                        <ChevronUp
+                          className="w-3 h-3"
+                          style={{ color: "#9AA7B6" }}
+                        />
+                      ) : (
+                        <ChevronDown
+                          className="w-3 h-3"
+                          style={{ color: "#9AA7B6" }}
+                        />
+                      )}
+                    </div>
+                  </motion.div>
+
+                  <AnimatePresence>
+                    {isExpanded && <TPSLPanel alt={alt} />}
+                  </AnimatePresence>
+                </div>
               );
             })}
           </div>

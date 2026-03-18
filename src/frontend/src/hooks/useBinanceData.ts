@@ -5,7 +5,13 @@ import type {
   Interval,
   KlineData,
 } from "../types/binance";
-import { calculateEMA, calculateRSI } from "../utils/calculations";
+import {
+  calculateEMA,
+  calculateRSI,
+  calculateResistanceLevels,
+  calculateStopLoss,
+  calculateTakeProfits,
+} from "../utils/calculations";
 
 const BASE = "https://fapi.binance.com";
 
@@ -195,7 +201,40 @@ export function useBinanceData(interval: Interval = "1h") {
         )
         .slice(0, 20);
 
-      setAltcoins(opportunities);
+      // Fetch klines for top 10 alts in parallel and compute TP/SL
+      const top10 = opportunities.slice(0, 10);
+      const klinesResults = await Promise.allSettled(
+        top10.map((alt) => fetchKlines(`${alt.symbol}USDT`, interval, 100)),
+      );
+
+      const enriched = top10.map((alt, i) => {
+        const result = klinesResults[i];
+        if (result.status === "fulfilled") {
+          const altKlines = result.value;
+          const resistanceLevels = calculateResistanceLevels(
+            altKlines,
+            alt.price,
+          );
+          const { tp1, tp2, tp3 } = calculateTakeProfits(
+            resistanceLevels,
+            alt.price,
+          );
+          const stopLoss = calculateStopLoss(altKlines, alt.price);
+          return {
+            ...alt,
+            klines: altKlines,
+            resistanceLevels,
+            tp1,
+            tp2,
+            tp3,
+            stopLoss,
+          };
+        }
+        return alt;
+      });
+
+      const finalOpportunities = [...enriched, ...opportunities.slice(10)];
+      setAltcoins(finalOpportunities);
       setLastUpdate(new Date());
       setError(null);
     } catch (err) {
