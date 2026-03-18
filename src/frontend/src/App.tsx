@@ -5,6 +5,7 @@ import { BTCPanel } from "./components/BTCPanel";
 import { CircuitBackground } from "./components/CircuitBackground";
 import { DollarFlow } from "./components/DollarFlow";
 import { Header } from "./components/Header";
+import { LiquidationFeed } from "./components/LiquidationFeed";
 import { PWAInstallPrompt } from "./components/PWAInstallPrompt";
 import { useBinanceData } from "./hooks/useBinanceData";
 import type { Interval } from "./types/binance";
@@ -33,6 +34,11 @@ function Dashboard() {
           {/* Dollar Flow */}
           <div className="mb-4">
             <DollarFlow btcMetrics={btcMetrics} altcoins={altcoins} />
+          </div>
+
+          {/* Liquidation Feed */}
+          <div className="mb-4">
+            <LiquidationFeed />
           </div>
 
           {/* Main content: BTC (65%) + Scanner (35%) */}

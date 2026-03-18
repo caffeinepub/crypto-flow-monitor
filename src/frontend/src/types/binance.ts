@@ -71,3 +71,12 @@ export interface BTCMetrics {
 }
 
 export type Interval = "1m" | "3m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
+
+export interface LiquidationData {
+  symbol: string;
+  side: "BUY" | "SELL"; // BUY = SHORT position liquidated (bullish), SELL = LONG position liquidated (bearish)
+  price: number;
+  origQty: number;
+  notionalValue: number; // price * origQty
+  time: number;
+}
