@@ -1,4 +1,3 @@
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
@@ -260,7 +259,6 @@ export function AltcoinScanner({ altcoins, loading }: AltcoinScannerProps) {
       style={{
         background: "#0F1622",
         border: "2px solid #1F2A3A",
-        overflow: "hidden",
       }}
       data-ocid="scanner.panel"
     >
@@ -312,10 +310,7 @@ export function AltcoinScanner({ altcoins, loading }: AltcoinScannerProps) {
         </div>
       </div>
 
-      <ScrollArea
-        className="flex-1"
-        style={{ maxHeight: "calc(100vh - 300px)", minHeight: 200 }}
-      >
+      <div className="flex-1">
         {loading ? (
           <div className="p-4 space-y-2" data-ocid="scanner.loading_state">
             {SKELETON_IDS.map((id) => (
@@ -437,7 +432,7 @@ export function AltcoinScanner({ altcoins, loading }: AltcoinScannerProps) {
             })}
           </div>
         )}
-      </ScrollArea>
+      </div>
     </motion.div>
   );
 }

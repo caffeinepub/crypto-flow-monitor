@@ -17,9 +17,8 @@ export function Header({
   onTabChange,
 }: HeaderProps) {
   const tabs = [
-    { id: "dashboard", label: "Dashboard", icon: Activity },
+    { id: "btc", label: "BTC Fluxo de Capital", icon: TrendingUp },
     { id: "scanner", label: "Scanner", icon: Scan },
-    { id: "btc", label: "BTC Analysis", icon: TrendingUp },
     { id: "market", label: "Mercado", icon: BarChart3 },
   ];
 
