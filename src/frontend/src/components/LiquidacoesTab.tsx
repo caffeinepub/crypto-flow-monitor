@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useMemo, useState } from "react";
+import { useLiquidationSounds } from "../hooks/useLiquidationSounds";
 import { useLiquidations } from "../hooks/useLiquidations";
 import type { LiquidationData } from "../types/binance";
 
@@ -465,6 +466,8 @@ function CombinedPanel({
 export function LiquidacoesTab() {
   const { liquidations, connected } = useLiquidations();
   const [filterText, setFilterText] = useState("");
+  const { soundEnabled, toggleSound, frenzyActive } =
+    useLiquidationSounds(liquidations);
 
   const filteredLiquidations = useMemo(() => {
     if (!filterText.trim()) return liquidations;
@@ -476,8 +479,8 @@ export function LiquidacoesTab() {
 
   return (
     <div className="space-y-4">
-      {/* Filter input */}
-      <div className="flex items-center gap-3">
+      {/* Filter + Sound toggle row */}
+      <div className="flex items-end gap-3 flex-wrap">
         <div className="relative flex-1 max-w-xs">
           <label
             htmlFor="liq-filter"
@@ -525,7 +528,32 @@ export function LiquidacoesTab() {
             )}
           </div>
         </div>
-        <div className="mt-5 text-xs" style={{ color: "#9AA7B6" }}>
+
+        {/* Sound toggle button */}
+        <button
+          type="button"
+          data-ocid="liquidacoes.toggle"
+          onClick={toggleSound}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all"
+          style={{
+            background: soundEnabled ? "rgba(34,211,238,0.1)" : "#0D1520",
+            border: soundEnabled
+              ? "1.5px solid #22D3EE"
+              : "1.5px solid #1F2A3A",
+            color: soundEnabled ? "#22D3EE" : "#9AA7B6",
+            boxShadow: soundEnabled ? "0 0 8px rgba(34,211,238,0.25)" : "none",
+          }}
+          title={
+            soundEnabled
+              ? "Desativar alertas sonoros"
+              : "Ativar alertas sonoros"
+          }
+        >
+          <span style={{ fontSize: 14 }}>{soundEnabled ? "🔊" : "🔇"}</span>
+          <span>Som</span>
+        </button>
+
+        <div className="text-xs" style={{ color: "#9AA7B6" }}>
           <span
             style={{
               color: filterText ? "#22D3EE" : "#9AA7B6",
@@ -537,6 +565,36 @@ export function LiquidacoesTab() {
           {" liquidações"}
         </div>
       </div>
+
+      {/* FRENESI indicator */}
+      <AnimatePresence>
+        {frenzyActive && (
+          <motion.div
+            key="frenzy"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{
+              opacity: [1, 0.75, 1],
+              scale: [1, 1.02, 1],
+            }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{
+              duration: 0.8,
+              repeat: Number.POSITIVE_INFINITY,
+              ease: "easeInOut",
+            }}
+            className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold text-sm uppercase tracking-widest"
+            style={{
+              background: "rgba(239,68,68,0.15)",
+              border: "2px solid #EF4444",
+              color: "#EF4444",
+              boxShadow:
+                "0 0 20px rgba(239,68,68,0.3), 0 0 40px rgba(239,68,68,0.1)",
+            }}
+          >
+            ⚡ FRENESI DE LIQUIDAÇÕES
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Feed + Chart side by side */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
