@@ -6,6 +6,7 @@ import { BTCPanel } from "./components/BTCPanel";
 import { BTCThermometer } from "./components/BTCThermometer";
 import { CircuitBackground } from "./components/CircuitBackground";
 import { Header } from "./components/Header";
+import { LiquidacoesTab } from "./components/LiquidacoesTab";
 import { MercadoPanel } from "./components/MercadoPanel";
 import { PWAInstallPrompt } from "./components/PWAInstallPrompt";
 import { useBinanceData } from "./hooks/useBinanceData";
@@ -32,8 +33,8 @@ function Dashboard() {
         />
 
         <main className="max-w-[1600px] mx-auto px-4 py-4">
-          {/* BTC Fluxo de Capital: Thermometer + Liquidation Comparison + BTCPanel */}
-          {activeTab === "btc" && (
+          {/* BTC Fluxo de Capital */}
+          <div style={{ display: activeTab === "btc" ? "block" : "none" }}>
             <div className="space-y-4">
               <BTCThermometer
                 score={btcMetrics?.reversalScore ?? 0}
@@ -42,17 +43,26 @@ function Dashboard() {
               <BTCLiquidationComparison />
               <BTCPanel metrics={btcMetrics} loading={loading} />
             </div>
-          )}
+          </div>
 
-          {/* Scanner: full-width altcoin scanner */}
-          {activeTab === "scanner" && (
+          {/* Scanner */}
+          <div style={{ display: activeTab === "scanner" ? "block" : "none" }}>
             <div className="w-full">
               <AltcoinScanner altcoins={altcoins} loading={loading} />
             </div>
-          )}
+          </div>
 
-          {/* Market: real-time market analysis */}
-          {activeTab === "market" && <MercadoPanel />}
+          {/* Mercado */}
+          <div style={{ display: activeTab === "market" ? "block" : "none" }}>
+            <MercadoPanel />
+          </div>
+
+          {/* Liquidações */}
+          <div
+            style={{ display: activeTab === "liquidacoes" ? "block" : "none" }}
+          >
+            <LiquidacoesTab />
+          </div>
         </main>
 
         {/* Footer */}

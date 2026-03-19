@@ -250,6 +250,9 @@ function TPSLPanel({ alt }: { alt: AltcoinOpportunity }) {
 export function AltcoinScanner({ altcoins, loading }: AltcoinScannerProps) {
   const [expandedSymbol, setExpandedSymbol] = useState<string | null>(null);
 
+  // Only show skeleton on initial load (no data yet)
+  const showSkeleton = loading && altcoins.length === 0;
+
   return (
     <motion.div
       initial={{ opacity: 0, x: 20 }}
@@ -311,7 +314,7 @@ export function AltcoinScanner({ altcoins, loading }: AltcoinScannerProps) {
       </div>
 
       <div className="flex-1">
-        {loading ? (
+        {showSkeleton ? (
           <div className="p-4 space-y-2" data-ocid="scanner.loading_state">
             {SKELETON_IDS.map((id) => (
               <div

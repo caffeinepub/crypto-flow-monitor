@@ -1,4 +1,11 @@
-import { Activity, BarChart3, RefreshCw, Scan, TrendingUp } from "lucide-react";
+import {
+  Activity,
+  BarChart3,
+  RefreshCw,
+  Scan,
+  TrendingUp,
+  Zap,
+} from "lucide-react";
 import { motion } from "motion/react";
 
 interface HeaderProps {
@@ -20,6 +27,7 @@ export function Header({
     { id: "btc", label: "BTC Fluxo de Capital", icon: TrendingUp },
     { id: "scanner", label: "Scanner", icon: Scan },
     { id: "market", label: "Mercado", icon: BarChart3 },
+    { id: "liquidacoes", label: "Liquidações", icon: Zap },
   ];
 
   return (
