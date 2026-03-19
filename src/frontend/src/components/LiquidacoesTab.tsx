@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useLiquidations } from "../hooks/useLiquidations";
 import type { LiquidationData } from "../types/binance";
 
@@ -464,9 +464,80 @@ function CombinedPanel({
 
 export function LiquidacoesTab() {
   const { liquidations, connected } = useLiquidations();
+  const [filterText, setFilterText] = useState("");
+
+  const filteredLiquidations = useMemo(() => {
+    if (!filterText.trim()) return liquidations;
+    const term = filterText.trim().toUpperCase();
+    return liquidations.filter((liq) =>
+      liq.symbol.toUpperCase().includes(term),
+    );
+  }, [liquidations, filterText]);
 
   return (
     <div className="space-y-4">
+      {/* Filter input */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-xs">
+          <label
+            htmlFor="liq-filter"
+            className="block text-xs font-bold uppercase tracking-widest mb-1"
+            style={{ color: "#22D3EE" }}
+          >
+            Filtrar ativo
+          </label>
+          <div className="relative">
+            <input
+              id="liq-filter"
+              data-ocid="liquidacoes.search_input"
+              type="text"
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              placeholder="Ex: BTC, ETH, SOL..."
+              className="w-full text-sm font-mono rounded-lg px-3 py-2 pr-8 outline-none transition-all"
+              style={{
+                background: "#0D1520",
+                border: "1.5px solid #1F2A3A",
+                color: "#E7EEF8",
+                caretColor: "#22D3EE",
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.border = "1.5px solid #22D3EE";
+                e.currentTarget.style.boxShadow =
+                  "0 0 0 2px rgba(34,211,238,0.15)";
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.border = "1.5px solid #1F2A3A";
+                e.currentTarget.style.boxShadow = "none";
+              }}
+            />
+            {filterText && (
+              <button
+                type="button"
+                data-ocid="liquidacoes.close_button"
+                onClick={() => setFilterText("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs rounded-full w-4 h-4 flex items-center justify-center transition-colors"
+                style={{ color: "#9AA7B6", background: "#1F2A3A" }}
+                title="Limpar filtro"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="mt-5 text-xs" style={{ color: "#9AA7B6" }}>
+          <span
+            style={{
+              color: filterText ? "#22D3EE" : "#9AA7B6",
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {filteredLiquidations.length}
+          </span>
+          {" liquidações"}
+        </div>
+      </div>
+
       {/* Feed + Chart side by side */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Live Feed */}
@@ -498,7 +569,9 @@ export function LiquidacoesTab() {
               </span>
             </div>
             <span className="text-xs" style={{ color: "#9AA7B6" }}>
-              Todas as liquidações
+              {filterText
+                ? `Filtrado: ${filterText.toUpperCase()}`
+                : "Todas as liquidações"}
             </span>
           </div>
 
@@ -519,12 +592,16 @@ export function LiquidacoesTab() {
 
           <div style={{ height: 360, overflowY: "auto" }}>
             <AnimatePresence initial={false}>
-              {liquidations.length === 0 ? (
+              {filteredLiquidations.length === 0 ? (
                 <div className="text-center py-12" style={{ color: "#9AA7B6" }}>
-                  <span className="text-xs">Aguardando liquidações...</span>
+                  <span className="text-xs">
+                    {filterText
+                      ? `Nenhuma liquidação para "${filterText.toUpperCase()}"`
+                      : "Aguardando liquidações..."}
+                  </span>
                 </div>
               ) : (
-                liquidations
+                filteredLiquidations
                   .slice(0, 80)
                   .map((liq, i) => (
                     <LiqRow key={`${liq.symbol}-${liq.time}-${i}`} liq={liq} />
@@ -535,11 +612,14 @@ export function LiquidacoesTab() {
         </div>
 
         {/* Bar Chart */}
-        <LiqBarChart liquidations={liquidations} />
+        <LiqBarChart liquidations={filteredLiquidations} />
       </div>
 
       {/* Combined result */}
-      <CombinedPanel liquidations={liquidations} connected={connected} />
+      <CombinedPanel
+        liquidations={filteredLiquidations}
+        connected={connected}
+      />
     </div>
   );
 }
