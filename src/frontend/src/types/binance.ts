@@ -66,6 +66,21 @@ export interface AltcoinOpportunity {
   timeframeUsed?: string;
 }
 
+export interface ReversalSignal {
+  label: string;
+  value: string;
+  score: number;
+  maxScore: number;
+  active: boolean;
+  direction: "bullish" | "bearish" | "neutral";
+}
+
+export interface ReversalDetails {
+  signals: ReversalSignal[];
+  totalScore: number;
+  reversalType: "bottom" | "top" | "none";
+}
+
 export interface BTCMetrics {
   price: number;
   priceChange24h: number;
@@ -75,6 +90,21 @@ export interface BTCMetrics {
   rsi: number;
   reversalScore: number;
   klines: KlineData[];
+  rsi15m: number;
+  rsi4h: number;
+  maPositions: {
+    ma20: number;
+    ma50: number;
+    ma100: number;
+    ma180: number;
+    priceAboveMA20: boolean;
+    priceAboveMA50: boolean;
+    priceAboveMA100: boolean;
+    priceAboveMA180: boolean;
+  };
+  volumeSpike: number;
+  oiDeltaPct: number;
+  reversalDetails: ReversalDetails;
 }
 
 export type Interval = "1m" | "3m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";

@@ -6,7 +6,7 @@ import {
   Zap,
 } from "lucide-react";
 import { motion } from "motion/react";
-import type { BTCMetrics } from "../types/binance";
+import type { BTCMetrics, ReversalDetails } from "../types/binance";
 import {
   formatFundingRate,
   formatPrice,
@@ -40,7 +40,15 @@ function getRSILabel(rsi: number): string {
 
 const SKELETON_IDS = ["s1", "s2", "s3", "s4", "s5"];
 
+const EMPTY_REVERSAL_DETAILS: ReversalDetails = {
+  signals: [],
+  totalScore: 0,
+  reversalType: "none",
+};
+
 export function BTCPanel({ metrics, loading }: BTCPanelProps) {
+  const reversalDetails = metrics?.reversalDetails ?? EMPTY_REVERSAL_DETAILS;
+
   return (
     <section data-ocid="btc.panel">
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
@@ -67,7 +75,7 @@ export function BTCPanel({ metrics, loading }: BTCPanelProps) {
               index={0}
             />
             <KPICard
-              label="RSI 14"
+              label="RSI 1h"
               value={metrics.rsi.toFixed(1)}
               sub={getRSILabel(metrics.rsi)}
               color={getRSIColor(metrics.rsi)}
@@ -109,7 +117,7 @@ export function BTCPanel({ metrics, loading }: BTCPanelProps) {
       </div>
 
       <div className="mb-4">
-        <ReversalScore score={metrics?.reversalScore ?? 0} />
+        <ReversalScore details={reversalDetails} />
       </div>
 
       <motion.div
