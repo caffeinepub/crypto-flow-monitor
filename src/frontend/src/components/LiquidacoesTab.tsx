@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { useLiquidationSounds } from "../hooks/useLiquidationSounds";
 import { useLiquidations } from "../hooks/useLiquidations";
 import type { LiquidationData } from "../types/binance";
+import { loadUiState, saveUiState } from "../utils/binanceCycleStorage";
 
 function formatValue(val: number): string {
   if (val >= 1_000_000) return `$${(val / 1_000_000).toFixed(2)}M`;
@@ -24,7 +25,6 @@ function timeAgo(ts: number): string {
   return `${Math.floor(diff / 3600)}h`;
 }
 
-// Color by notional value size
 function getSizeColor(notional: number): {
   color: string;
   bg: string;
@@ -91,12 +91,11 @@ function LiqRow({ liq }: { liq: LiquidationData }) {
   );
 }
 
-// Bar chart: 10-minute buckets of LONG vs SHORT volume
 function LiqBarChart({ liquidations }: { liquidations: LiquidationData[] }) {
   const buckets = useMemo(() => {
     const now = Date.now();
     const NUM_BUCKETS = 10;
-    const BUCKET_MS = 60_000; // 1 minute each
+    const BUCKET_MS = 60_000;
     const result = Array.from({ length: NUM_BUCKETS }, (_, i) => ({
       label: `-${NUM_BUCKETS - i}m`,
       long: 0,
@@ -149,7 +148,6 @@ function LiqBarChart({ liquidations }: { liquidations: LiquidationData[] }) {
         </div>
       </div>
 
-      {/* Chart area */}
       <div className="flex items-end gap-1" style={{ height: 140 }}>
         {buckets.map((b, i) => {
           const longH = (b.long / maxVal) * 120;
@@ -209,7 +207,6 @@ function LiqBarChart({ liquidations }: { liquidations: LiquidationData[] }) {
         })}
       </div>
 
-      {/* Size legend */}
       <div className="mt-3 pt-3" style={{ borderTop: "1px solid #1F2A3A" }}>
         <div className="flex flex-wrap gap-2 justify-center">
           {[
@@ -240,7 +237,6 @@ function LiqBarChart({ liquidations }: { liquidations: LiquidationData[] }) {
   );
 }
 
-// Combined result panel
 function CombinedPanel({
   liquidations,
   connected,
@@ -260,7 +256,6 @@ function CombinedPanel({
   const grandTotal = longTotal + shortTotal || 1;
   const longPct = (longTotal / grandTotal) * 100;
 
-  // Count by tier
   const tiers = [
     {
       label: "≥$1M",
@@ -400,7 +395,6 @@ function CombinedPanel({
         </div>
       </div>
 
-      {/* Proportion bar */}
       <div className="mb-4">
         <div
           className="flex justify-between text-xs mb-1"
@@ -433,7 +427,6 @@ function CombinedPanel({
         </div>
       </div>
 
-      {/* Tier counts */}
       <div className="grid grid-cols-4 gap-2">
         {tiers.map((tier) => (
           <div
@@ -465,9 +458,16 @@ function CombinedPanel({
 
 export function LiquidacoesTab() {
   const { liquidations, connected } = useLiquidations();
-  const [filterText, setFilterText] = useState("");
-  const { soundEnabled, toggleSound, frenzyActive } =
+  const [filterText, setFilterText] = useState<string>(() =>
+    loadUiState<string>("liq_filter", ""),
+  );
+  const { soundEnabled, toggleSound, frenzyActive, spikeAlert } =
     useLiquidationSounds(liquidations);
+
+  function handleFilterChange(val: string) {
+    setFilterText(val);
+    saveUiState("liq_filter", val);
+  }
 
   const filteredLiquidations = useMemo(() => {
     if (!filterText.trim()) return liquidations;
@@ -495,7 +495,7 @@ export function LiquidacoesTab() {
               data-ocid="liquidacoes.search_input"
               type="text"
               value={filterText}
-              onChange={(e) => setFilterText(e.target.value)}
+              onChange={(e) => handleFilterChange(e.target.value)}
               placeholder="Ex: BTC, ETH, SOL..."
               className="w-full text-sm font-mono rounded-lg px-3 py-2 pr-8 outline-none transition-all"
               style={{
@@ -518,7 +518,7 @@ export function LiquidacoesTab() {
               <button
                 type="button"
                 data-ocid="liquidacoes.close_button"
-                onClick={() => setFilterText("")}
+                onClick={() => handleFilterChange("")}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-xs rounded-full w-4 h-4 flex items-center justify-center transition-colors"
                 style={{ color: "#9AA7B6", background: "#1F2A3A" }}
                 title="Limpar filtro"
@@ -529,7 +529,6 @@ export function LiquidacoesTab() {
           </div>
         </div>
 
-        {/* Sound toggle button */}
         <button
           type="button"
           data-ocid="liquidacoes.toggle"
@@ -566,7 +565,7 @@ export function LiquidacoesTab() {
         </div>
       </div>
 
-      {/* FRENESI indicator */}
+      {/* Alert banners */}
       <AnimatePresence>
         {frenzyActive && (
           <motion.div
@@ -594,11 +593,84 @@ export function LiquidacoesTab() {
             ⚡ FRENESI DE LIQUIDAÇÕES
           </motion.div>
         )}
+
+        {spikeAlert && (
+          <motion.div
+            key={`spike-${spikeAlert.timestamp}`}
+            initial={{ opacity: 0, y: -10, scale: 0.96 }}
+            animate={{
+              opacity: 1,
+              y: 0,
+              scale: 1,
+              boxShadow: [
+                "0 0 20px rgba(168,85,247,0.5), 0 0 50px rgba(168,85,247,0.15)",
+                "0 0 40px rgba(168,85,247,0.8), 0 0 80px rgba(168,85,247,0.3)",
+                "0 0 20px rgba(168,85,247,0.5), 0 0 50px rgba(168,85,247,0.15)",
+              ],
+            }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{
+              duration: 0.3,
+              boxShadow: {
+                duration: 1.2,
+                repeat: Number.POSITIVE_INFINITY,
+                ease: "easeInOut",
+              },
+            }}
+            className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl font-bold uppercase tracking-widest"
+            style={{
+              background:
+                "linear-gradient(135deg, rgba(88,28,135,0.35) 0%, rgba(168,85,247,0.15) 100%)",
+              border: "2px solid #A855F7",
+              color: "#E9D5FF",
+              boxShadow:
+                "0 0 20px rgba(168,85,247,0.5), 0 0 50px rgba(168,85,247,0.15)",
+            }}
+          >
+            <div className="flex items-center gap-3">
+              <motion.span
+                animate={{ rotate: [0, -10, 10, -8, 8, 0] }}
+                transition={{
+                  duration: 0.5,
+                  repeat: 2,
+                  ease: "easeInOut",
+                }}
+                style={{ fontSize: 18 }}
+              >
+                🚨
+              </motion.span>
+              <span className="text-sm" style={{ color: "#E9D5FF" }}>
+                SPIKE DE LIQUIDAÇÕES
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span
+                className="text-lg font-black font-mono px-3 py-1 rounded-lg"
+                style={{
+                  background: "rgba(168,85,247,0.25)",
+                  border: "1px solid #A855F744",
+                  color: "#D8B4FE",
+                  letterSpacing: "0.08em",
+                }}
+              >
+                {spikeAlert.symbol}
+              </span>
+              <span
+                className="text-xs font-semibold px-2 py-1 rounded"
+                style={{
+                  color: "#C084FC",
+                  background: "rgba(168,85,247,0.15)",
+                  border: "1px solid #A855F733",
+                }}
+              >
+                2× MÉDIA
+              </span>
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
 
-      {/* Feed + Chart side by side */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Live Feed */}
         <div
           className="rounded-xl p-4"
           style={{ background: "#0F1622", border: "2px solid #1F2A3A" }}
@@ -633,7 +705,6 @@ export function LiquidacoesTab() {
             </span>
           </div>
 
-          {/* Column headers */}
           <div
             className="grid text-xs mb-1 px-2"
             style={{
@@ -669,11 +740,9 @@ export function LiquidacoesTab() {
           </div>
         </div>
 
-        {/* Bar Chart */}
         <LiqBarChart liquidations={filteredLiquidations} />
       </div>
 
-      {/* Combined result */}
       <CombinedPanel
         liquidations={filteredLiquidations}
         connected={connected}

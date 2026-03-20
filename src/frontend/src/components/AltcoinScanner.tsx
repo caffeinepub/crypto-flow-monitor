@@ -2,6 +2,7 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import type { AltcoinOpportunity } from "../types/binance";
+import { loadUiState, saveUiState } from "../utils/binanceCycleStorage";
 import {
   formatFundingRate,
   formatPrice,
@@ -248,7 +249,15 @@ function TPSLPanel({ alt }: { alt: AltcoinOpportunity }) {
 }
 
 export function AltcoinScanner({ altcoins, loading }: AltcoinScannerProps) {
-  const [expandedSymbol, setExpandedSymbol] = useState<string | null>(null);
+  const [expandedSymbol, setExpandedSymbol] = useState<string | null>(() =>
+    loadUiState<string | null>("scanner_expanded", null),
+  );
+
+  function handleToggle(symbol: string, isExpanded: boolean) {
+    const next = isExpanded ? null : symbol;
+    setExpandedSymbol(next);
+    saveUiState("scanner_expanded", next);
+  }
 
   // Only show skeleton on initial load (no data yet)
   const showSkeleton = loading && altcoins.length === 0;
@@ -353,9 +362,7 @@ export function AltcoinScanner({ altcoins, loading }: AltcoinScannerProps) {
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.03, duration: 0.3 }}
                     className="grid grid-cols-[auto_1fr_auto_auto_auto_auto_auto] gap-2 items-center px-3 py-2 cursor-pointer transition-all hover:bg-white/5"
-                    onClick={() =>
-                      setExpandedSymbol(isExpanded ? null : alt.symbol)
-                    }
+                    onClick={() => handleToggle(alt.symbol, isExpanded)}
                     data-ocid={`scanner.item.toggle.${i + 1}`}
                   >
                     <CoinAvatar symbol={alt.symbol} />

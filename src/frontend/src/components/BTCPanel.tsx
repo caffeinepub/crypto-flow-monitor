@@ -15,6 +15,7 @@ import {
 import { BTCChart } from "./BTCChart";
 import { KPICard } from "./KPICard";
 import { ReversalScore } from "./ReversalScore";
+import { SupportResistanceBar } from "./SupportResistanceBar";
 
 type NeonColor = "green" | "red" | "blue" | "cyan" | "orange";
 
@@ -118,6 +119,10 @@ export function BTCPanel({ metrics, loading }: BTCPanelProps) {
 
       <div className="mb-4">
         <ReversalScore details={reversalDetails} />
+      </div>
+
+      <div className="mb-4">
+        <SupportResistanceBar metrics={metrics} />
       </div>
 
       <motion.div

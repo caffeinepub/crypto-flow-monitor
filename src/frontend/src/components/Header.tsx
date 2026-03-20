@@ -1,6 +1,7 @@
 import {
   Activity,
   BarChart3,
+  Bot,
   RefreshCw,
   Scan,
   TrendingUp,
@@ -28,6 +29,7 @@ export function Header({
     { id: "scanner", label: "Scanner", icon: Scan },
     { id: "market", label: "Mercado", icon: BarChart3 },
     { id: "liquidacoes", label: "Liquidações", icon: Zap },
+    { id: "bottrader", label: "Bot Trader", icon: Bot },
   ];
 
   return (

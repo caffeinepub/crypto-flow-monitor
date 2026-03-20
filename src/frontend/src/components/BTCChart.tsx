@@ -87,7 +87,7 @@ function drawChart(canvas: HTMLCanvasElement, klines: KlineData[]) {
 }
 
 export function BTCChart() {
-  const [interval, setInterval] = useState<Interval>("1h");
+  const [interval, setInterval] = useState<Interval>("1m");
   const { klines, loading } = useBTCChart(interval);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 

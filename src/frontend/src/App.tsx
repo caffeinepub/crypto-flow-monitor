@@ -4,6 +4,7 @@ import { AltcoinScanner } from "./components/AltcoinScanner";
 import { BTCLiquidationComparison } from "./components/BTCLiquidationComparison";
 import { BTCPanel } from "./components/BTCPanel";
 import { BTCThermometer } from "./components/BTCThermometer";
+import { BotTraderTab } from "./components/BotTraderTab";
 import { CircuitBackground } from "./components/CircuitBackground";
 import { Header } from "./components/Header";
 import { LiquidacoesTab } from "./components/LiquidacoesTab";
@@ -11,14 +12,22 @@ import { MercadoPanel } from "./components/MercadoPanel";
 import { PWAInstallPrompt } from "./components/PWAInstallPrompt";
 import { useBinanceData } from "./hooks/useBinanceData";
 import type { Interval } from "./types/binance";
+import { loadUiState, saveUiState } from "./utils/binanceCycleStorage";
 
 const queryClient = new QueryClient();
 
 function Dashboard() {
-  const [activeTab, setActiveTab] = useState("btc");
+  const [activeTab, setActiveTab] = useState<string>(() =>
+    loadUiState<string>("active_tab", "btc"),
+  );
   const { btcMetrics, altcoins, loading, lastUpdate, refresh } = useBinanceData(
     "1h" as Interval,
   );
+
+  function handleTabChange(tab: string) {
+    setActiveTab(tab);
+    saveUiState("active_tab", tab);
+  }
 
   return (
     <div className="min-h-screen relative" style={{ background: "#070B10" }}>
@@ -29,7 +38,7 @@ function Dashboard() {
           onRefresh={refresh}
           loading={loading}
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={handleTabChange}
         />
 
         <main className="max-w-[1600px] mx-auto px-4 py-4">
@@ -62,6 +71,13 @@ function Dashboard() {
             style={{ display: activeTab === "liquidacoes" ? "block" : "none" }}
           >
             <LiquidacoesTab />
+          </div>
+
+          {/* Bot Trader */}
+          <div
+            style={{ display: activeTab === "bottrader" ? "block" : "none" }}
+          >
+            <BotTraderTab altcoins={altcoins} btcMetrics={btcMetrics} />
           </div>
         </main>
 

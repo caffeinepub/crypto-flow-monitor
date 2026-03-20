@@ -54,6 +54,27 @@ async function fetchOpenInterest(symbol: string) {
   return res.json();
 }
 
+// Returns the duration in milliseconds for a given Binance interval string.
+function intervalToMs(interval: Interval): number {
+  const map: Record<string, number> = {
+    "1m": 60_000,
+    "3m": 3 * 60_000,
+    "5m": 5 * 60_000,
+    "15m": 15 * 60_000,
+    "30m": 30 * 60_000,
+    "1h": 60 * 60_000,
+    "2h": 2 * 60 * 60_000,
+    "4h": 4 * 60 * 60_000,
+    "6h": 6 * 60 * 60_000,
+    "8h": 8 * 60 * 60_000,
+    "12h": 12 * 60 * 60_000,
+    "1d": 24 * 60 * 60_000,
+    "3d": 3 * 24 * 60 * 60_000,
+    "1w": 7 * 24 * 60 * 60_000,
+  };
+  return map[interval] ?? 60_000;
+}
+
 // ─── KNOWLEDGE BASE: PRICE ACTION & CANDLE PATTERN DETECTION ─────────────────
 
 /**
@@ -211,13 +232,10 @@ function computeBTCReversalDetails(
   const signals: ReversalSignal[] = [];
 
   // ── SIGNAL 1: RSI 4h (max 25pts) ───────────────────────────────────────────
-  // Peso maior porque confirma tendência estrutural (4h = timeframe institucional)
   let rsi4hScore = 0;
-  if (rsi4h < 30)
-    rsi4hScore = 25; // Sobrevendido extremo
-  else if (rsi4h < 40)
-    rsi4hScore = 15; // Fraqueza estrutural
-  else if (rsi4h < 50) rsi4hScore = 5; // Esfriando
+  if (rsi4h < 30) rsi4hScore = 25;
+  else if (rsi4h < 40) rsi4hScore = 15;
+  else if (rsi4h < 50) rsi4hScore = 5;
   signals.push({
     label: "RSI 4h",
     value: rsi4h.toFixed(1),
@@ -255,14 +273,11 @@ function computeBTCReversalDetails(
   });
 
   // ── SIGNAL 4: Funding Rate (max 20pts) ─────────────────────────────────────
-  // Funding muito negativo = shorts pagando caro = combustível para squeeze de alta
   let frScore = 0;
   const frPct = fundingRate * 100;
-  if (fundingRate < -0.0005)
-    frScore = 20; // Capitulação extrema
-  else if (fundingRate < -0.0001)
-    frScore = 12; // Negativo relevante
-  else if (fundingRate < 0) frScore = 5; // Leve negativo
+  if (fundingRate < -0.0005) frScore = 20;
+  else if (fundingRate < -0.0001) frScore = 12;
+  else if (fundingRate < 0) frScore = 5;
   signals.push({
     label: "Funding Rate",
     value: `${frPct.toFixed(4)}%`,
@@ -273,7 +288,6 @@ function computeBTCReversalDetails(
   });
 
   // ── SIGNAL 5: OI Delta (max 15pts) ─────────────────────────────────────────
-  // OI crescendo com preço caindo = novas posições short = potencial short squeeze
   let oiScore = 0;
   if (oiDeltaPct > 2 && priceChange24h < 0) oiScore = 15;
   else if (oiDeltaPct > 0) oiScore = 5;
@@ -300,7 +314,6 @@ function computeBTCReversalDetails(
   });
 
   // ── SIGNAL 7: MA Position (max 10pts) ──────────────────────────────────────
-  // Preço abaixo de todas as MAs = excesso de baixa = zona de demanda potencial
   const belowAll =
     !maPositions.priceAboveMA20 &&
     !maPositions.priceAboveMA50 &&
@@ -344,8 +357,6 @@ function computeBTCReversalDetails(
   });
 
   // ── SIGNAL 9: Padrão de Candle 15m (max 15pts) ─────────────────────────────
-  // Detecta hammer, wick rejection e engolfo bullish
-  // Baseado em: pavio longo = absorção/rejeição; engolfo = agressão de compradores
   const wickResult = detectHammerOrWickRejection(klines15m);
   const engulfing15m = detectBullishEngulfing(klines15m);
   const engulfing1h = detectBullishEngulfing(klines1h);
@@ -374,8 +385,6 @@ function computeBTCReversalDetails(
   });
 
   // ── SIGNAL 10: Liquidity Grab / Stop Hunt (max 15pts) ──────────────────────
-  // Caça a stops + reversão = sinal institucional de altíssima probabilidade
-  // Baseado em: liquidity grab = mercado elimina stops antes de reverter
   const lgResult15m = detectLiquidityGrab(klines15m);
   const lgResult1h = detectLiquidityGrab(klines1h);
   let lgScore = 0;
@@ -398,13 +407,10 @@ function computeBTCReversalDetails(
   });
 
   // ── SIGNAL 11: Divergência de Volume 15m (max 10pts) ───────────────────────
-  // Preço cai + volume cai = exaustão vendedora (queda fraca, reversão próxima)
-  // Volume clímax = capitulação = pico de desespero antes da virada
   const volDiv = detectVolumeDivergence(klines15m);
   let volDivScore = 0;
-  if (volDiv.type === "climax")
-    volDivScore = 10; // Capitulação de volume
-  else if (volDiv.type === "exhaustion") volDivScore = 6; // Exaustão vendedora
+  if (volDiv.type === "climax") volDivScore = 10;
+  else if (volDiv.type === "exhaustion") volDivScore = 6;
   signals.push({
     label: "Vol. Divergência",
     value: volDiv.label,
@@ -415,8 +421,6 @@ function computeBTCReversalDetails(
   });
 
   // ── SIGNAL 12: CHOCH 15m (max 10pts) ───────────────────────────────────────
-  // Change of Character = primeira quebra da estrutura de baixa
-  // Baseado em: CHOCH = sinal de reversão estrutural no price action
   const choch15m = detectCHOCH(klines15m);
   const choch1h = detectCHOCH(klines1h);
   let chochScore = 0;
@@ -459,7 +463,6 @@ function computeBTCReversalDetails(
     maPositions.priceAboveMA100 &&
     maPositions.priceAboveMA180;
   if (aboveAll) topScore += 10;
-  // Bearish wick rejection at top
   const bearishWick = (() => {
     const last = klines15m[klines15m.length - 1];
     if (!last) return false;
@@ -535,7 +538,6 @@ export function useBinanceData(interval: Interval = "1h") {
       const rsi15m = calculateRSI(closes15m);
       const rsi4h = calculateRSI(closes4h);
 
-      // MA positions (EMA on 1h closes)
       const ema20arr = calculateEMA(closes1h, 20);
       const ema50arr = calculateEMA(closes1h, 50);
       const ema100arr = calculateEMA(closes1h, 100);
@@ -556,14 +558,12 @@ export function useBinanceData(interval: Interval = "1h") {
       const btcChange = Number.parseFloat(btcTicker?.priceChangePercent || "0");
       const fundingRate = Number.parseFloat(btcFunding?.lastFundingRate || "0");
 
-      // Volume spike: last candle vol / avg of previous 20 candles
       const recentVols = klines1h.slice(-21);
       const lastVol = recentVols[recentVols.length - 1]?.volume ?? 0;
       const avgVol =
         recentVols.slice(0, 20).reduce((s, k) => s + k.volume, 0) / 20 || 1;
       const volumeSpike = lastVol / avgVol;
 
-      // OI delta %
       const oiDeltaPct =
         prevOIRef.current > 0
           ? ((oiValue - prevOIRef.current) / prevOIRef.current) * 100
@@ -774,9 +774,17 @@ export function useBinanceData(interval: Interval = "1h") {
   return { btcMetrics, altcoins, loading, error, lastUpdate, refresh };
 }
 
+/**
+ * Fetches BTC kline data and auto-refreshes synchronized to the exact
+ * candle close boundary for the selected interval.
+ *
+ * For example, with "1m" selected, the chart re-fetches at 00:01:00,
+ * 00:02:00, 00:03:00 UTC -- not 60s after the app loaded.
+ */
 export function useBTCChart(interval: Interval) {
   const [klines, setKlines] = useState<KlineData[]>([]);
   const [loading, setLoading] = useState(true);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: interval is used inside fetchKlines
   const load = useCallback(async () => {
@@ -792,8 +800,38 @@ export function useBTCChart(interval: Interval) {
   }, [interval]);
 
   useEffect(() => {
+    // Clear any previous timers when interval changes
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+
+    // Fetch immediately
     load();
-  }, [load]);
+
+    const intervalMs = intervalToMs(interval);
+
+    // Schedule recurring fetches synchronized to candle boundaries.
+    // msUntilNext = time remaining until the next candle opens.
+    // We add a 500ms buffer to ensure the candle has closed on Binance's side.
+    const schedule = () => {
+      const now = Date.now();
+      const msUntilNext = intervalMs - (now % intervalMs) + 500;
+      timerRef.current = setTimeout(() => {
+        load();
+        schedule(); // re-schedule for the next boundary
+      }, msUntilNext);
+    };
+
+    schedule();
+
+    return () => {
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [load, interval]);
 
   const emaData = (() => {
     const closes = klines.map((k) => k.close);
