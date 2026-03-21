@@ -17,14 +17,29 @@ export function PWAInstallPrompt() {
 
   useEffect(() => {
     // Check if already running as PWA
-    if (window.matchMedia("(display-mode: standalone)").matches) {
+    if (
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (window.navigator as { standalone?: boolean }).standalone === true
+    ) {
       setIsInstalled(true);
       return;
     }
 
-    // Check if user dismissed before
-    const wasDismissed = localStorage.getItem("pwa-dismissed");
-    if (wasDismissed) return;
+    // Remove legacy key
+    localStorage.removeItem("pwa-dismissed");
+
+    // Check if user dismissed recently (reset after 7 days)
+    const dismissedAt = localStorage.getItem("pwa-dismissed-at");
+    if (dismissedAt) {
+      const daysSince =
+        (Date.now() - Number(dismissedAt)) / (1000 * 60 * 60 * 24);
+      if (daysSince < 7) {
+        setDismissed(true);
+        return;
+      }
+      // Reset after 7 days so user can be prompted again
+      localStorage.removeItem("pwa-dismissed-at");
+    }
 
     // Detect iOS
     const ios =
@@ -62,7 +77,7 @@ export function PWAInstallPrompt() {
   const handleDismiss = () => {
     setShow(false);
     setDismissed(true);
-    localStorage.setItem("pwa-dismissed", "1");
+    localStorage.setItem("pwa-dismissed-at", String(Date.now()));
   };
 
   if (isInstalled || dismissed || !show) return null;
