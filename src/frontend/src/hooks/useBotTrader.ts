@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AltcoinOpportunity, BTCMetrics } from "../types/binance";
 import {
   type BotState,
@@ -235,6 +235,297 @@ function buildOpenLog(
   return `${direction} em ${asset.symbol} @ ${asset.price.toFixed(4)} | ${tpStr} | ${slStr}${hints.length ? ` | ${hints.join(", ")}` : ""}`;
 }
 
+// ─── Fetch live prices for a list of symbols from Binance ─────────────────
+async function fetchLivePrices(
+  symbols: string[],
+): Promise<Record<string, number>> {
+  if (symbols.length === 0) return {};
+  try {
+    const results: Record<string, number> = {};
+    await Promise.all(
+      symbols.map(async (sym) => {
+        try {
+          const res = await fetch(
+            `https://fapi.binance.com/fapi/v1/ticker/price?symbol=${sym}`,
+          );
+          if (res.ok) {
+            const data = await res.json();
+            results[sym] = Number.parseFloat(data.price);
+          }
+        } catch {
+          // ignore individual failures
+        }
+      }),
+    );
+    return results;
+  } catch {
+    return {};
+  }
+}
+
+function applyTradeLogic(
+  state: BotState,
+  altcoins: AltcoinOpportunity[],
+  btcMetrics: BTCMetrics | null,
+  livePrices: Record<string, number>,
+): BotState {
+  const activeTrades = { ...state.activeTrades };
+  let tradeHistory = [...state.tradeHistory];
+  const reversalScore = btcMetrics?.reversalScore ?? 0;
+  const reversalType = btcMetrics?.reversalDetails?.reversalType ?? "none";
+
+  // Build price map from Scanner data
+  const priceMap: Record<string, AltcoinOpportunity> = {};
+  for (const a of altcoins) priceMap[a.symbol] = a;
+
+  // ── Update and check active trades ──────────────────────────────────────
+  for (const mod of MODALITIES) {
+    const trade = activeTrades[mod];
+    if (!trade || trade.status === "CLOSED") continue;
+
+    // Use Scanner price first, then live-fetched price, then keep last known price
+    const scannerAltcoin = priceMap[trade.symbol];
+    const livePrice = livePrices[trade.symbol];
+    const currentPrice =
+      scannerAltcoin?.price ?? livePrice ?? trade.currentPrice;
+
+    let updated = { ...trade, currentPrice };
+    const cfg = MODALITY_CONFIG[mod];
+
+    if (updated.direction === "LONG") {
+      updated.pnlPct = ((currentPrice - updated.entry) / updated.entry) * 100;
+    } else {
+      updated.pnlPct = ((updated.entry - currentPrice) / updated.entry) * 100;
+    }
+
+    let closed = false;
+
+    // BOT EARLY CLOSE: scalp/daytrade LONG on strong BTC top
+    if (
+      !closed &&
+      cfg.allowReversal &&
+      reversalScore > 70 &&
+      reversalType === "top" &&
+      updated.direction === "LONG"
+    ) {
+      const ct = {
+        ...updated,
+        status: "CLOSED" as const,
+        closeReason: "BOT_CLOSE" as const,
+        closedPrice: currentPrice,
+        closeTime: Date.now(),
+        botLog: "BTC com sinal de topo forte — trade fechado preventivamente",
+      };
+      tradeHistory = [ct, ...tradeHistory].slice(0, 200);
+      activeTrades[mod] = null;
+      closed = true;
+    }
+
+    // BOT REVERSAL: scalp/daytrade only → flip to SHORT
+    if (
+      !closed &&
+      cfg.allowReversal &&
+      reversalScore > 80 &&
+      reversalType === "top" &&
+      updated.direction === "LONG"
+    ) {
+      const ct = {
+        ...updated,
+        status: "CLOSED" as const,
+        closeReason: "BOT_REVERSE" as const,
+        closedPrice: currentPrice,
+        closeTime: Date.now(),
+        botLog: "Reversão BTC detectada — trade invertido para SHORT",
+      };
+      tradeHistory = [ct, ...tradeHistory].slice(0, 200);
+      if (scannerAltcoin) {
+        const entry = currentPrice;
+        const targets = computeTargets(mod, entry, "SHORT");
+        activeTrades[mod] = {
+          id: makeId(),
+          modality: mod,
+          symbol: trade.symbol,
+          direction: "SHORT",
+          entry,
+          currentPrice: entry,
+          ...targets,
+          status: "ACTIVE",
+          openTime: Date.now(),
+          pnlPct: 0,
+          botLog: buildOpenLog(mod, scannerAltcoin, "SHORT"),
+          partialsTaken: 0,
+          score: scannerAltcoin.score,
+        };
+      } else {
+        activeTrades[mod] = null;
+      }
+      closed = true;
+    }
+
+    // BOT ADVERSE FUNDING: scalp LONG with very positive funding
+    if (
+      !closed &&
+      updated.direction === "LONG" &&
+      mod === "scalp" &&
+      scannerAltcoin &&
+      scannerAltcoin.fundingRate > 0.001
+    ) {
+      updated = {
+        ...updated,
+        status: "CLOSED",
+        closeReason: "BOT_CLOSE",
+        closedPrice: currentPrice,
+        closeTime: Date.now(),
+        botLog: "Funding rate adverso — scalp encerrado",
+      };
+      tradeHistory = [updated, ...tradeHistory].slice(0, 200);
+      activeTrades[mod] = null;
+      closed = true;
+    }
+
+    if (!closed) {
+      if (updated.direction === "LONG") {
+        if (currentPrice >= updated.tp3 && updated.partialsTaken >= 2) {
+          updated = {
+            ...updated,
+            status: "CLOSED",
+            closeReason: "TP3_WIN",
+            closedPrice: currentPrice,
+            closeTime: Date.now(),
+            pnlPct: ((updated.tp3 - updated.entry) / updated.entry) * 100,
+            botLog: "TP3 atingido — trade encerrado com lucro total 🎯",
+          };
+          tradeHistory = [updated, ...tradeHistory].slice(0, 200);
+          activeTrades[mod] = null;
+          closed = true;
+        } else if (currentPrice >= updated.tp2 && updated.partialsTaken === 1) {
+          updated = {
+            ...updated,
+            status: "PARTIAL_TP2",
+            partialsTaken: 2,
+            botLog: "TP2 atingido — parcial de 33% realizada",
+          };
+        } else if (currentPrice >= updated.tp1 && updated.partialsTaken === 0) {
+          updated = {
+            ...updated,
+            status: "PARTIAL_TP1",
+            partialsTaken: 1,
+            botLog: "TP1 atingido — parcial de 33% realizada",
+          };
+        } else if (currentPrice <= updated.stopLoss) {
+          updated = {
+            ...updated,
+            status: "CLOSED",
+            closeReason: "SL_LOSS",
+            closedPrice: currentPrice,
+            closeTime: Date.now(),
+            pnlPct: ((updated.stopLoss - updated.entry) / updated.entry) * 100,
+            botLog: "Stop loss atingido — posição encerrada",
+          };
+          tradeHistory = [updated, ...tradeHistory].slice(0, 200);
+          activeTrades[mod] = null;
+          closed = true;
+        }
+      } else {
+        if (currentPrice <= updated.tp3 && updated.partialsTaken >= 2) {
+          updated = {
+            ...updated,
+            status: "CLOSED",
+            closeReason: "TP3_WIN",
+            closedPrice: currentPrice,
+            closeTime: Date.now(),
+            pnlPct: ((updated.entry - updated.tp3) / updated.entry) * 100,
+            botLog: "TP3 SHORT atingido — trade encerrado com lucro total 🎯",
+          };
+          tradeHistory = [updated, ...tradeHistory].slice(0, 200);
+          activeTrades[mod] = null;
+          closed = true;
+        } else if (currentPrice <= updated.tp2 && updated.partialsTaken === 1) {
+          updated = {
+            ...updated,
+            status: "PARTIAL_TP2",
+            partialsTaken: 2,
+            botLog: "TP2 SHORT — parcial de 33% realizada",
+          };
+        } else if (currentPrice <= updated.tp1 && updated.partialsTaken === 0) {
+          updated = {
+            ...updated,
+            status: "PARTIAL_TP1",
+            partialsTaken: 1,
+            botLog: "TP1 SHORT — parcial de 33% realizada",
+          };
+        } else if (currentPrice >= updated.stopLoss) {
+          updated = {
+            ...updated,
+            status: "CLOSED",
+            closeReason: "SL_LOSS",
+            closedPrice: currentPrice,
+            closeTime: Date.now(),
+            pnlPct: -((updated.stopLoss - updated.entry) / updated.entry) * 100,
+            botLog: "Stop loss SHORT atingido — posição encerrada",
+          };
+          tradeHistory = [updated, ...tradeHistory].slice(0, 200);
+          activeTrades[mod] = null;
+          closed = true;
+        }
+      }
+      if (!closed) {
+        activeTrades[mod] = updated;
+      }
+    }
+  }
+
+  // ── Open new trades for empty slots ───────────────────────────────────────
+  const activeSymbols = new Set(
+    MODALITIES.map((m) => activeTrades[m]?.symbol).filter(Boolean),
+  );
+
+  const eligible = altcoins.filter(
+    (a) =>
+      a.tp1 !== undefined &&
+      a.tp2 !== undefined &&
+      a.tp3 !== undefined &&
+      a.stopLoss !== undefined &&
+      !activeSymbols.has(a.symbol),
+  );
+
+  for (const mod of MODALITIES) {
+    if (activeTrades[mod] !== null) continue;
+
+    const candidates = filterCandidates(mod, eligible, reversalScore);
+    if (candidates.length === 0) continue;
+
+    const best = candidates[0];
+    const cfg = MODALITY_CONFIG[mod];
+
+    let direction: "LONG" | "SHORT" = "LONG";
+    if (cfg.allowReversal && reversalScore > 70 && reversalType === "top") {
+      direction = "SHORT";
+    }
+
+    const targets = computeTargets(mod, best.price, direction);
+
+    activeTrades[mod] = {
+      id: makeId(),
+      modality: mod,
+      symbol: best.symbol,
+      direction,
+      entry: best.price,
+      currentPrice: best.price,
+      ...targets,
+      status: "ACTIVE",
+      openTime: Date.now(),
+      pnlPct: 0,
+      botLog: buildOpenLog(mod, best, direction),
+      partialsTaken: 0,
+      score: best.score,
+    };
+    activeSymbols.add(best.symbol);
+  }
+
+  return { activeTrades, tradeHistory };
+}
+
 export function useBotTrader(
   altcoins: AltcoinOpportunity[],
   btcMetrics: BTCMetrics | null,
@@ -243,282 +534,66 @@ export function useBotTrader(
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  const altcoinsRef = useRef(altcoins);
+  altcoinsRef.current = altcoins;
+
+  const btcMetricsRef = useRef(btcMetrics);
+  btcMetricsRef.current = btcMetrics;
+
+  // Get symbols of active trades that need direct price feeds
+  const getActiveSymbols = useCallback((): string[] => {
+    const current = stateRef.current;
+    const scannerSymbols = new Set(altcoinsRef.current.map((a) => a.symbol));
+    return MODALITIES.map((m) => current.activeTrades[m]?.symbol).filter(
+      (sym): sym is string => !!sym && !scannerSymbols.has(sym),
+    );
+  }, []);
+
+  // Main effect: runs when Scanner data changes
   useEffect(() => {
     if (altcoins.length === 0) return;
-
     setState((prev) => {
-      const activeTrades = { ...prev.activeTrades };
-      let tradeHistory = [...prev.tradeHistory];
-      const reversalScore = btcMetrics?.reversalScore ?? 0;
-      const reversalType = btcMetrics?.reversalDetails?.reversalType ?? "none";
-
-      const priceMap: Record<string, AltcoinOpportunity> = {};
-      for (const a of altcoins) priceMap[a.symbol] = a;
-
-      // ── Update and check active trades ──────────────────────────────────
-      for (const mod of MODALITIES) {
-        const trade = activeTrades[mod];
-        if (!trade || trade.status === "CLOSED") continue;
-
-        const altcoin = priceMap[trade.symbol];
-        const currentPrice = altcoin?.price ?? trade.currentPrice;
-        let updated = { ...trade, currentPrice };
-        const cfg = MODALITY_CONFIG[mod];
-
-        if (updated.direction === "LONG") {
-          updated.pnlPct =
-            ((currentPrice - updated.entry) / updated.entry) * 100;
-        } else {
-          updated.pnlPct =
-            ((updated.entry - currentPrice) / updated.entry) * 100;
-        }
-
-        let closed = false;
-
-        // BOT EARLY CLOSE: scalp/daytrade LONG on strong BTC top
-        if (
-          !closed &&
-          cfg.allowReversal &&
-          reversalScore > 70 &&
-          reversalType === "top" &&
-          updated.direction === "LONG"
-        ) {
-          const ct = {
-            ...updated,
-            status: "CLOSED" as const,
-            closeReason: "BOT_CLOSE" as const,
-            closedPrice: currentPrice,
-            closeTime: Date.now(),
-            botLog:
-              "BTC com sinal de topo forte — trade fechado preventivamente",
-          };
-          tradeHistory = [ct, ...tradeHistory].slice(0, 200);
-          activeTrades[mod] = null;
-          closed = true;
-        }
-
-        // BOT REVERSAL: scalp/daytrade only → flip to SHORT
-        if (
-          !closed &&
-          cfg.allowReversal &&
-          reversalScore > 80 &&
-          reversalType === "top" &&
-          updated.direction === "LONG"
-        ) {
-          const ct = {
-            ...updated,
-            status: "CLOSED" as const,
-            closeReason: "BOT_REVERSE" as const,
-            closedPrice: currentPrice,
-            closeTime: Date.now(),
-            botLog: "Reversão BTC detectada — trade invertido para SHORT",
-          };
-          tradeHistory = [ct, ...tradeHistory].slice(0, 200);
-          if (altcoin) {
-            const entry = currentPrice;
-            const targets = computeTargets(mod, entry, "SHORT");
-            activeTrades[mod] = {
-              id: makeId(),
-              modality: mod,
-              symbol: trade.symbol,
-              direction: "SHORT",
-              entry,
-              currentPrice: entry,
-              ...targets,
-              status: "ACTIVE",
-              openTime: Date.now(),
-              pnlPct: 0,
-              botLog: buildOpenLog(mod, altcoin, "SHORT"),
-              partialsTaken: 0,
-              score: altcoin.score,
-            };
-          } else {
-            activeTrades[mod] = null;
-          }
-          closed = true;
-        }
-
-        // BOT ADVERSE FUNDING: scalp LONG with very positive funding
-        if (
-          !closed &&
-          updated.direction === "LONG" &&
-          mod === "scalp" &&
-          altcoin &&
-          altcoin.fundingRate > 0.001
-        ) {
-          updated = {
-            ...updated,
-            status: "CLOSED",
-            closeReason: "BOT_CLOSE",
-            closedPrice: currentPrice,
-            closeTime: Date.now(),
-            botLog: "Funding rate adverso — scalp encerrado",
-          };
-          tradeHistory = [updated, ...tradeHistory].slice(0, 200);
-          activeTrades[mod] = null;
-          closed = true;
-        }
-
-        if (!closed) {
-          if (updated.direction === "LONG") {
-            if (currentPrice >= updated.tp3 && updated.partialsTaken >= 2) {
-              updated = {
-                ...updated,
-                status: "CLOSED",
-                closeReason: "TP3_WIN",
-                closedPrice: currentPrice,
-                closeTime: Date.now(),
-                pnlPct: ((updated.tp3 - updated.entry) / updated.entry) * 100,
-                botLog: "TP3 atingido — trade encerrado com lucro total 🎯",
-              };
-              tradeHistory = [updated, ...tradeHistory].slice(0, 200);
-              activeTrades[mod] = null;
-              closed = true;
-            } else if (
-              currentPrice >= updated.tp2 &&
-              updated.partialsTaken === 1
-            ) {
-              updated = {
-                ...updated,
-                status: "PARTIAL_TP2",
-                partialsTaken: 2,
-                botLog: "TP2 atingido — parcial de 33% realizada",
-              };
-            } else if (
-              currentPrice >= updated.tp1 &&
-              updated.partialsTaken === 0
-            ) {
-              updated = {
-                ...updated,
-                status: "PARTIAL_TP1",
-                partialsTaken: 1,
-                botLog: "TP1 atingido — parcial de 33% realizada",
-              };
-            } else if (currentPrice <= updated.stopLoss) {
-              updated = {
-                ...updated,
-                status: "CLOSED",
-                closeReason: "SL_LOSS",
-                closedPrice: currentPrice,
-                closeTime: Date.now(),
-                pnlPct:
-                  ((updated.stopLoss - updated.entry) / updated.entry) * 100,
-                botLog: "Stop loss atingido — posição encerrada",
-              };
-              tradeHistory = [updated, ...tradeHistory].slice(0, 200);
-              activeTrades[mod] = null;
-              closed = true;
-            }
-          } else {
-            if (currentPrice <= updated.tp3 && updated.partialsTaken >= 2) {
-              updated = {
-                ...updated,
-                status: "CLOSED",
-                closeReason: "TP3_WIN",
-                closedPrice: currentPrice,
-                closeTime: Date.now(),
-                pnlPct: ((updated.entry - updated.tp3) / updated.entry) * 100,
-                botLog:
-                  "TP3 SHORT atingido — trade encerrado com lucro total 🎯",
-              };
-              tradeHistory = [updated, ...tradeHistory].slice(0, 200);
-              activeTrades[mod] = null;
-              closed = true;
-            } else if (
-              currentPrice <= updated.tp2 &&
-              updated.partialsTaken === 1
-            ) {
-              updated = {
-                ...updated,
-                status: "PARTIAL_TP2",
-                partialsTaken: 2,
-                botLog: "TP2 SHORT — parcial de 33% realizada",
-              };
-            } else if (
-              currentPrice <= updated.tp1 &&
-              updated.partialsTaken === 0
-            ) {
-              updated = {
-                ...updated,
-                status: "PARTIAL_TP1",
-                partialsTaken: 1,
-                botLog: "TP1 SHORT — parcial de 33% realizada",
-              };
-            } else if (currentPrice >= updated.stopLoss) {
-              updated = {
-                ...updated,
-                status: "CLOSED",
-                closeReason: "SL_LOSS",
-                closedPrice: currentPrice,
-                closeTime: Date.now(),
-                pnlPct:
-                  -((updated.stopLoss - updated.entry) / updated.entry) * 100,
-                botLog: "Stop loss SHORT atingido — posição encerrada",
-              };
-              tradeHistory = [updated, ...tradeHistory].slice(0, 200);
-              activeTrades[mod] = null;
-              closed = true;
-            }
-          }
-          if (!closed) {
-            activeTrades[mod] = updated;
-          }
-        }
-      }
-
-      // ── Open new trades for empty slots ─────────────────────────────────
-      const activeSymbols = new Set(
-        MODALITIES.map((m) => activeTrades[m]?.symbol).filter(Boolean),
-      );
-
-      const eligible = altcoins.filter(
-        (a) =>
-          a.tp1 !== undefined &&
-          a.tp2 !== undefined &&
-          a.tp3 !== undefined &&
-          a.stopLoss !== undefined &&
-          !activeSymbols.has(a.symbol),
-      );
-
-      for (const mod of MODALITIES) {
-        if (activeTrades[mod] !== null) continue;
-
-        const candidates = filterCandidates(mod, eligible, reversalScore);
-        if (candidates.length === 0) continue;
-
-        const best = candidates[0];
-        const cfg = MODALITY_CONFIG[mod];
-
-        let direction: "LONG" | "SHORT" = "LONG";
-        if (cfg.allowReversal && reversalScore > 70 && reversalType === "top") {
-          direction = "SHORT";
-        }
-
-        const targets = computeTargets(mod, best.price, direction);
-
-        activeTrades[mod] = {
-          id: makeId(),
-          modality: mod,
-          symbol: best.symbol,
-          direction,
-          entry: best.price,
-          currentPrice: best.price,
-          ...targets,
-          status: "ACTIVE",
-          openTime: Date.now(),
-          pnlPct: 0,
-          botLog: buildOpenLog(mod, best, direction),
-          partialsTaken: 0,
-          score: best.score,
-        };
-        activeSymbols.add(best.symbol);
-      }
-
-      const nextState = { activeTrades, tradeHistory };
-      saveBotState(nextState);
-      return nextState;
+      const next = applyTradeLogic(prev, altcoins, btcMetrics, {});
+      saveBotState(next);
+      return next;
     });
   }, [altcoins, btcMetrics]);
+
+  // Interval effect: every 5 seconds, fetch live prices for active trades
+  // that are NOT in the Scanner list, then re-evaluate trade logic.
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const symbolsToFetch = getActiveSymbols();
+      const livePrices = await fetchLivePrices(symbolsToFetch);
+
+      setState((prev) => {
+        // Check if any active trade needs a price update
+        const needsUpdate = MODALITIES.some((m) => {
+          const t = prev.activeTrades[m];
+          if (!t) return false;
+          const scannerPrice = altcoinsRef.current.find(
+            (a) => a.symbol === t.symbol,
+          )?.price;
+          return (
+            scannerPrice === undefined && livePrices[t.symbol] !== undefined
+          );
+        });
+
+        if (!needsUpdate && symbolsToFetch.length === 0) return prev;
+
+        const next = applyTradeLogic(
+          prev,
+          altcoinsRef.current,
+          btcMetricsRef.current,
+          livePrices,
+        );
+        saveBotState(next);
+        return next;
+      });
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [getActiveSymbols]);
 
   const patterns = computePatterns(state.tradeHistory);
 
