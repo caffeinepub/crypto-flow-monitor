@@ -965,6 +965,13 @@ export function useBinanceData(interval: Interval = "1h") {
             timeframeUsed = "15m";
           }
 
+          const closes15mAlt = klines15mAlt.map((k) => k.close);
+          const rsi14 = calculateRSI(closes15mAlt, 14);
+          const ma20arr = calculateEMA(closes15mAlt, 20);
+          const ma50arr = calculateEMA(closes15mAlt, 50);
+          const ma20 = ma20arr[ma20arr.length - 1] ?? 0;
+          const ma50 = ma50arr[ma50arr.length - 1] ?? 0;
+
           return {
             ...alt,
             klines: klines15mAlt,
@@ -974,6 +981,9 @@ export function useBinanceData(interval: Interval = "1h") {
             tp3,
             stopLoss,
             timeframeUsed,
+            rsi14,
+            ma20,
+            ma50,
           };
         }),
       );

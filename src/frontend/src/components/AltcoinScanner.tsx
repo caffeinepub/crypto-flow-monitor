@@ -243,6 +243,192 @@ function TPSLPanel({ alt }: { alt: AltcoinOpportunity }) {
             )}
           </div>
         </div>
+
+        {/* Indicadores Técnicos */}
+        {alt.rsi14 !== undefined && (
+          <div
+            className="mt-2 rounded-lg px-2 py-2"
+            style={{
+              background: "rgba(139,92,246,0.07)",
+              border: "1px solid rgba(139,92,246,0.25)",
+            }}
+          >
+            <div
+              className="text-xs font-semibold mb-1.5"
+              style={{ color: "#A78BFA" }}
+            >
+              Indicadores Técnicos (15m)
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {/* RSI(14) */}
+              <div
+                className="rounded px-2 py-1.5"
+                style={{
+                  background:
+                    alt.rsi14 < 40
+                      ? "rgba(34,197,94,0.08)"
+                      : alt.rsi14 > 60
+                        ? "rgba(239,68,68,0.08)"
+                        : "rgba(234,179,8,0.08)",
+                  border:
+                    alt.rsi14 < 40
+                      ? "1px solid rgba(34,197,94,0.3)"
+                      : alt.rsi14 > 60
+                        ? "1px solid rgba(239,68,68,0.3)"
+                        : "1px solid rgba(234,179,8,0.3)",
+                }}
+              >
+                <div className="text-xs mb-0.5" style={{ color: "#9AA7B6" }}>
+                  RSI(14)
+                </div>
+                <div
+                  className="text-xs font-bold font-mono"
+                  style={{
+                    color:
+                      alt.rsi14 < 40
+                        ? "#22C55E"
+                        : alt.rsi14 > 60
+                          ? "#EF4444"
+                          : "#EAB308",
+                  }}
+                >
+                  {alt.rsi14.toFixed(1)}
+                </div>
+                <div
+                  className="text-xs"
+                  style={{
+                    color:
+                      alt.rsi14 < 40
+                        ? "#22C55E99"
+                        : alt.rsi14 > 60
+                          ? "#EF444499"
+                          : "#EAB30899",
+                  }}
+                >
+                  {alt.rsi14 < 40
+                    ? "Sobrevendido"
+                    : alt.rsi14 > 60
+                      ? "Sobrecomprado"
+                      : "Neutro"}
+                </div>
+              </div>
+
+              {/* MA20 */}
+              {alt.ma20 !== undefined && (
+                <div
+                  className="rounded px-2 py-1.5"
+                  style={{
+                    background: "rgba(59,130,246,0.08)",
+                    border: "1px solid rgba(59,130,246,0.3)",
+                  }}
+                >
+                  <div className="text-xs mb-0.5" style={{ color: "#9AA7B6" }}>
+                    MA20
+                  </div>
+                  <div
+                    className="text-xs font-bold font-mono"
+                    style={{ color: "#60A5FA" }}
+                  >
+                    {formatPrice(alt.ma20)}
+                  </div>
+                  <div
+                    className="text-xs"
+                    style={{
+                      color: alt.price > alt.ma20 ? "#22C55E99" : "#EF444499",
+                    }}
+                  >
+                    {alt.price > alt.ma20 ? "↑ Acima" : "↓ Abaixo"}
+                  </div>
+                </div>
+              )}
+
+              {/* MA50 */}
+              {alt.ma50 !== undefined && (
+                <div
+                  className="rounded px-2 py-1.5"
+                  style={{
+                    background: "rgba(59,130,246,0.08)",
+                    border: "1px solid rgba(59,130,246,0.3)",
+                  }}
+                >
+                  <div className="text-xs mb-0.5" style={{ color: "#9AA7B6" }}>
+                    MA50
+                  </div>
+                  <div
+                    className="text-xs font-bold font-mono"
+                    style={{ color: "#60A5FA" }}
+                  >
+                    {formatPrice(alt.ma50)}
+                  </div>
+                  <div
+                    className="text-xs"
+                    style={{
+                      color: alt.price > alt.ma50 ? "#22C55E99" : "#EF444499",
+                    }}
+                  >
+                    {alt.price > alt.ma50 ? "↑ Acima" : "↓ Abaixo"}
+                  </div>
+                </div>
+              )}
+
+              {/* Sinal MA */}
+              {alt.ma20 !== undefined &&
+                alt.ma50 !== undefined &&
+                (() => {
+                  const isBullish = alt.price > alt.ma20 && alt.ma20 > alt.ma50;
+                  const isBearish = alt.price < alt.ma20 && alt.ma20 < alt.ma50;
+                  const maColor = isBullish
+                    ? "#22C55E"
+                    : isBearish
+                      ? "#EF4444"
+                      : "#60A5FA";
+                  const maBg = isBullish
+                    ? "rgba(34,197,94,0.08)"
+                    : isBearish
+                      ? "rgba(239,68,68,0.08)"
+                      : "rgba(59,130,246,0.08)";
+                  const maBorder = isBullish
+                    ? "1px solid rgba(34,197,94,0.3)"
+                    : isBearish
+                      ? "1px solid rgba(239,68,68,0.3)"
+                      : "1px solid rgba(59,130,246,0.3)";
+                  return (
+                    <div
+                      className="rounded px-2 py-1.5"
+                      style={{ background: maBg, border: maBorder }}
+                    >
+                      <div
+                        className="text-xs mb-0.5"
+                        style={{ color: "#9AA7B6" }}
+                      >
+                        Sinal MA
+                      </div>
+                      <div
+                        className="text-xs font-bold"
+                        style={{ color: maColor }}
+                      >
+                        {isBullish
+                          ? "Altista"
+                          : isBearish
+                            ? "Baixista"
+                            : "Neutro"}
+                      </div>
+                      <div
+                        className="text-xs"
+                        style={{ color: `${maColor}99` }}
+                      >
+                        {isBullish
+                          ? "P > MA20 > MA50"
+                          : isBearish
+                            ? "P < MA20 < MA50"
+                            : "Cruzamento"}
+                      </div>
+                    </div>
+                  );
+                })()}
+            </div>
+          </div>
+        )}
       </div>
     </motion.div>
   );

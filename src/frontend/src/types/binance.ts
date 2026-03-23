@@ -64,6 +64,9 @@ export interface AltcoinOpportunity {
   tp3?: number;
   stopLoss?: number;
   timeframeUsed?: string;
+  rsi14?: number;
+  ma20?: number;
+  ma50?: number;
 }
 
 export interface ReversalSignal {
