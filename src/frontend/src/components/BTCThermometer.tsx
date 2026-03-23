@@ -1,26 +1,39 @@
 import { motion } from "motion/react";
+import type { BTCMetrics } from "../types/binance";
 
 interface BTCThermometerProps {
-  score: number;
+  btcMetrics: BTCMetrics | null;
   loading?: boolean;
 }
 
 export function BTCThermometer({
-  score,
+  btcMetrics,
   loading = false,
 }: BTCThermometerProps) {
+  const score = btcMetrics?.capitalFlowScore ?? 50;
+  const takerBuyRatio = btcMetrics?.takerBuyRatio ?? 0.5;
   const clampedScore = Math.max(0, Math.min(100, score));
 
-  const direction =
-    clampedScore <= 40 ? "BAIXISTA" : clampedScore <= 60 ? "NEUTRO" : "ALTISTA";
+  const directionLabel =
+    clampedScore <= 35
+      ? "SAÍDA DE CAPITAL"
+      : clampedScore <= 55
+        ? "NEUTRO"
+        : "ENTRADA DE CAPITAL";
   const intensity =
     clampedScore <= 33 ? "Fraco" : clampedScore <= 66 ? "Médio" : "Forte";
   const dirColor =
-    clampedScore <= 40 ? "#EF4444" : clampedScore <= 60 ? "#3B82F6" : "#22C55E";
+    clampedScore <= 35 ? "#EF4444" : clampedScore <= 55 ? "#3B82F6" : "#22C55E";
   const intColor =
     clampedScore <= 33 ? "#EF4444" : clampedScore <= 66 ? "#F97316" : "#22C55E";
 
-  const pointerPercent = clampedScore;
+  const takerPct = (takerBuyRatio * 100).toFixed(1);
+  const takerColor =
+    takerBuyRatio > 0.52
+      ? "#22C55E"
+      : takerBuyRatio < 0.48
+        ? "#EF4444"
+        : "#9AA7B6";
 
   if (loading) {
     return (
@@ -53,7 +66,7 @@ export function BTCThermometer({
             BTC FLUXO DE CAPITAL
           </h3>
           <p className="text-xs mt-0.5" style={{ color: "#9AA7B6" }}>
-            RSI · Funding Rate · OI · Liquidações
+            Taker Ratio · OI · Funding · Momentum
           </p>
         </div>
         <div className="text-right">
@@ -82,7 +95,7 @@ export function BTCThermometer({
         />
         {/* Pointer/needle */}
         <motion.div
-          animate={{ left: `calc(${pointerPercent}% - 8px)` }}
+          animate={{ left: `calc(${clampedScore}% - 8px)` }}
           transition={{ type: "spring", stiffness: 100, damping: 20 }}
           style={{ position: "absolute", top: -6, width: 16 }}
         >
@@ -110,13 +123,13 @@ export function BTCThermometer({
 
       {/* Labels */}
       <div className="flex justify-between text-xs font-bold uppercase tracking-wider">
-        <span style={{ color: "#EF4444" }}>Baixista</span>
+        <span style={{ color: "#EF4444" }}>Saída USD←BTC</span>
         <span style={{ color: "#3B82F6" }}>Neutro</span>
-        <span style={{ color: "#22C55E" }}>Altista</span>
+        <span style={{ color: "#22C55E" }}>Entrada USD→BTC</span>
       </div>
 
-      {/* Direction badge */}
-      <div className="mt-3 flex items-center gap-2">
+      {/* Direction badge + taker ratio */}
+      <div className="mt-3 flex items-center gap-2 flex-wrap">
         <span
           className="px-3 py-1 rounded text-sm font-bold uppercase tracking-wider"
           style={{
@@ -125,11 +138,15 @@ export function BTCThermometer({
             border: `1px solid ${dirColor}55`,
           }}
         >
-          {direction}
+          {directionLabel}
         </span>
         <span className="text-xs" style={{ color: "#9AA7B6" }}>
           · Intensidade: <span style={{ color: intColor }}>{intensity}</span>
         </span>
+      </div>
+      <div className="mt-2 text-xs" style={{ color: "#9AA7B6" }}>
+        Taker Buy:{" "}
+        <span style={{ color: takerColor, fontWeight: 600 }}>{takerPct}%</span>
       </div>
     </motion.div>
   );

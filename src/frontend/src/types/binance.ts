@@ -89,6 +89,8 @@ export interface BTCMetrics {
   openInterest: number;
   rsi: number;
   reversalScore: number;
+  capitalFlowScore: number;
+  takerBuyRatio: number;
   klines: KlineData[];
   rsi15m: number;
   rsi4h: number;

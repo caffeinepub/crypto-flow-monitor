@@ -1,6 +1,13 @@
-import { Download, Smartphone, X } from "lucide-react";
+import { Download, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
+
+// Reference both icons so the prune script keeps them in the build
+const APP_ICON_512 = "/assets/generated/pwa-icon.dim_512x512.png";
+const APP_ICON_192 = "/assets/generated/pwa-icon-192.dim_192x192.png";
+
+// Suppress unused variable warning – both paths must survive the prune step
+void APP_ICON_512;
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -53,6 +60,15 @@ export function PWAInstallPrompt() {
       return () => clearTimeout(timer);
     }
 
+    // Check if event was captured globally before this component mounted
+    const globalPrompt = (window as any).__pwaInstallEvent;
+    if (globalPrompt) {
+      (window as any).__pwaInstallEvent = null;
+      setDeferredPrompt(globalPrompt as BeforeInstallPromptEvent);
+      setTimeout(() => setShow(true), 2000);
+      return;
+    }
+
     // Android / Desktop: listen for beforeinstallprompt
     const handler = (e: Event) => {
       e.preventDefault();
@@ -100,15 +116,12 @@ export function PWAInstallPrompt() {
               "0 0 30px rgba(34,211,238,0.15), 0 20px 60px rgba(0,0,0,0.8)",
           }}
         >
-          <div
-            className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
-            style={{
-              background: "linear-gradient(135deg, #22D3EE22, #3B82F622)",
-              border: "1px solid #22D3EE44",
-            }}
-          >
-            <Smartphone className="w-6 h-6" style={{ color: "#22D3EE" }} />
-          </div>
+          <img
+            src={APP_ICON_192}
+            alt="App icon"
+            className="w-12 h-12 rounded-xl shrink-0"
+            style={{ border: "1px solid #22D3EE44" }}
+          />
 
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-sm text-white mb-0.5">

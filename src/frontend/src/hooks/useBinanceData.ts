@@ -54,6 +54,71 @@ async function fetchOpenInterest(symbol: string) {
   return res.json();
 }
 
+async function fetchTakerRatio(): Promise<number> {
+  try {
+    const res = await fetch(
+      `${BASE}/futures/data/takerlongshortRatio?symbol=BTCUSDT&period=5m&limit=5`,
+    );
+    const data: { buySellRatio: string }[] = await res.json();
+    if (!data?.length) return 0.5;
+    const avg =
+      data.reduce((s, d) => s + Number.parseFloat(d.buySellRatio), 0) /
+      data.length;
+    return avg / (1 + avg);
+  } catch {
+    return 0.5;
+  }
+}
+
+function computeCapitalFlowScore({
+  takerBuyRatio,
+  oiDeltaPct,
+  priceChange24h,
+  fundingRate,
+  volumeSpike,
+  priceAboveMA20,
+  priceAboveMA50,
+}: {
+  takerBuyRatio: number;
+  oiDeltaPct: number;
+  priceChange24h: number;
+  fundingRate: number;
+  volumeSpike: number;
+  priceAboveMA20: boolean;
+  priceAboveMA50: boolean;
+}): number {
+  let score = 0;
+
+  // Taker Buy Ratio (0-40 pts)
+  if (takerBuyRatio > 0.65) score += 40;
+  else if (takerBuyRatio > 0.55) score += 28;
+  else if (takerBuyRatio > 0.52) score += 18;
+  else if (takerBuyRatio >= 0.48) score += 10;
+  // < 0.48 → 0
+
+  // OI Delta + Price Direction (0-20 pts)
+  if (oiDeltaPct > 0 && priceChange24h > 0) score += 20;
+  else if (oiDeltaPct < 0 && priceChange24h > 0) score += 12;
+  else if (oiDeltaPct > 0 && priceChange24h < 0) score += 5;
+
+  // Funding Rate (0-20 pts)
+  if (fundingRate < -0.0005) score += 20;
+  else if (fundingRate < -0.0001) score += 14;
+  else if (fundingRate < 0) score += 8;
+  else if (fundingRate < 0.0001) score += 4;
+  // >= 0.0001 → 0
+
+  // Volume Spike (0-10 pts)
+  if (volumeSpike > 2.5) score += 10;
+  else if (volumeSpike > 1.5) score += 5;
+
+  // Price vs MAs (0-10 pts)
+  if (priceAboveMA20 && priceAboveMA50) score += 10;
+  else if (priceAboveMA20) score += 5;
+
+  return Math.min(100, Math.round(score));
+}
+
 // Returns the duration in milliseconds for a given Binance interval string.
 function intervalToMs(interval: Interval): number {
   const map: Record<string, number> = {
@@ -77,11 +142,6 @@ function intervalToMs(interval: Interval): number {
 
 // ─── KNOWLEDGE BASE: PRICE ACTION & CANDLE PATTERN DETECTION ─────────────────
 
-/**
- * Detects a Hammer or Long Lower Wick Rejection candle.
- * Logic: lower wick >= 2x body size, close in upper 40% of candle range.
- * Based on: corpo pequeno + pavio longo inferior = rejeição de preços baixos.
- */
 function detectHammerOrWickRejection(klines: KlineData[]): {
   detected: boolean;
   label: string;
@@ -101,22 +161,15 @@ function detectHammerOrWickRejection(klines: KlineData[]): {
   const bodyRatio = body / totalRange;
   const lowerWickRatio = lowerWick / totalRange;
 
-  // Strong wick rejection: lower wick > 50% of range, body < 25%
   if (lowerWickRatio > 0.5 && bodyRatio < 0.25 && lowerWick > upperWick * 2) {
     return { detected: true, label: "Wick Rejection", strength: 1.0 };
   }
-  // Moderate hammer: lower wick >= 2x body
   if (lowerWick >= 2 * body && lowerWickRatio > 0.35) {
     return { detected: true, label: "Hammer", strength: 0.65 };
   }
   return { detected: false, label: "Nenhum", strength: 0 };
 }
 
-/**
- * Detects Bullish Engulfing pattern.
- * Logic: current candle is bullish and fully engulfs previous bearish candle body.
- * Based on: engolfo bullish = agressão dos compradores sobrepondo vendedores.
- */
 function detectBullishEngulfing(klines: KlineData[]): boolean {
   if (klines.length < 2) return false;
   const curr = klines[klines.length - 1];
@@ -127,11 +180,6 @@ function detectBullishEngulfing(klines: KlineData[]): boolean {
   return curr.close > prev.open && curr.open < prev.close;
 }
 
-/**
- * Detects a Liquidity Grab (Stop Hunt) followed by recovery.
- * Logic: candle sweeps below recent swing low then closes back above it.
- * Based on: caça a stops + reversão = sinal de reversão institucional de alta probabilidade.
- */
 function detectLiquidityGrab(klines: KlineData[]): {
   detected: boolean;
   strength: number;
@@ -142,23 +190,17 @@ function detectLiquidityGrab(klines: KlineData[]): {
   const lookback = klines.slice(-15, -1);
   const swingLow = Math.min(...lookback.map((k) => k.low));
 
-  // Price swept below swing low but closed above it
   const sweptBelow = last.low < swingLow * 0.999;
   const recoveredAbove = last.close > swingLow;
 
   if (sweptBelow && recoveredAbove) {
     const depthPct = ((swingLow - last.low) / swingLow) * 100;
-    const strength = Math.min(1, depthPct / 1.5); // stronger grab = deeper sweep
+    const strength = Math.min(1, depthPct / 1.5);
     return { detected: true, strength };
   }
   return { detected: false, strength: 0 };
 }
 
-/**
- * Detects Volume Divergence (declining volume during price decline = exhaustion of sellers).
- * Based on: preço cai + volume cai = queda fraca = potencial exaustão.
- * Also checks for volume clímax (spike at bottom = capitulação).
- */
 function detectVolumeDivergence(klines: KlineData[]): {
   type: "exhaustion" | "climax" | "none";
   label: string;
@@ -172,7 +214,6 @@ function detectVolumeDivergence(klines: KlineData[]): {
   const priceDirection = last5[last5.length - 1].close - last5[0].close;
   const volTrend = last5[last5.length - 1].volume - last5[0].volume;
 
-  // Volume clímax: last candle volume >= 2.5x average with a red candle = capitulação
   const lastCandle = klines[klines.length - 1];
   const lastVolSpike = lastCandle.volume / (avgVol || 1);
   const lastBearish = lastCandle.close < lastCandle.open;
@@ -180,7 +221,6 @@ function detectVolumeDivergence(klines: KlineData[]): {
     return { type: "climax", label: `Capitulação ${lastVolSpike.toFixed(1)}x` };
   }
 
-  // Exhaustion: price falling but volume declining
   if (priceDirection < 0 && volTrend < 0) {
     return { type: "exhaustion", label: "Exaustão vendedora" };
   }
@@ -188,23 +228,15 @@ function detectVolumeDivergence(klines: KlineData[]): {
   return { type: "none", label: "Neutro" };
 }
 
-/**
- * Detects potential CHOCH (Change of Character) on the 15m chart.
- * Simplified: after sequence of lower highs/lows, the last candle closes
- * above the previous high of the most recent down-leg.
- * Based on: CHOCH = reversão estrutural confirmada.
- */
 function detectCHOCH(klines: KlineData[]): boolean {
   if (klines.length < 6) return false;
 
   const slice = klines.slice(-6);
-  // Check for prior downtrend: each candle's close below previous
   const downtrend = slice
     .slice(0, 4)
     .every((k, i, arr) => i === 0 || k.close < arr[i - 1].close);
   if (!downtrend) return false;
 
-  // CHOCH: last candle closes above the high of candle from 2 bars ago
   const last = slice[slice.length - 1];
   const prevHigh = slice[slice.length - 3].high;
   return last.close > prevHigh;
@@ -231,7 +263,6 @@ function computeBTCReversalDetails(
 ): ReversalDetails {
   const signals: ReversalSignal[] = [];
 
-  // ── SIGNAL 1: RSI 4h (max 25pts) ───────────────────────────────────────────
   let rsi4hScore = 0;
   if (rsi4h < 30) rsi4hScore = 25;
   else if (rsi4h < 40) rsi4hScore = 15;
@@ -245,7 +276,6 @@ function computeBTCReversalDetails(
     direction: rsi4h < 40 ? "bearish" : "neutral",
   });
 
-  // ── SIGNAL 2: RSI 1h (max 20pts) ───────────────────────────────────────────
   let rsi1hScore = 0;
   if (rsi1h < 30) rsi1hScore = 20;
   else if (rsi1h < 40) rsi1hScore = 12;
@@ -259,7 +289,6 @@ function computeBTCReversalDetails(
     direction: rsi1h < 40 ? "bearish" : "neutral",
   });
 
-  // ── SIGNAL 3: RSI 15m (max 10pts) ──────────────────────────────────────────
   let rsi15mScore = 0;
   if (rsi15m < 30) rsi15mScore = 10;
   else if (rsi15m < 40) rsi15mScore = 6;
@@ -272,7 +301,6 @@ function computeBTCReversalDetails(
     direction: rsi15m < 40 ? "bearish" : "neutral",
   });
 
-  // ── SIGNAL 4: Funding Rate (max 20pts) ─────────────────────────────────────
   let frScore = 0;
   const frPct = fundingRate * 100;
   if (fundingRate < -0.0005) frScore = 20;
@@ -287,7 +315,6 @@ function computeBTCReversalDetails(
     direction: fundingRate < 0 ? "bullish" : "neutral",
   });
 
-  // ── SIGNAL 5: OI Delta (max 15pts) ─────────────────────────────────────────
   let oiScore = 0;
   if (oiDeltaPct > 2 && priceChange24h < 0) oiScore = 15;
   else if (oiDeltaPct > 0) oiScore = 5;
@@ -300,7 +327,6 @@ function computeBTCReversalDetails(
     direction: oiDeltaPct > 2 && priceChange24h < 0 ? "bullish" : "neutral",
   });
 
-  // ── SIGNAL 6: Volume Spike 1h (max 10pts) ──────────────────────────────────
   let volScore = 0;
   if (volumeSpike > 2.5) volScore = 10;
   else if (volumeSpike > 1.5) volScore = 5;
@@ -313,7 +339,6 @@ function computeBTCReversalDetails(
     direction: volScore > 0 ? "bullish" : "neutral",
   });
 
-  // ── SIGNAL 7: MA Position (max 10pts) ──────────────────────────────────────
   const belowAll =
     !maPositions.priceAboveMA20 &&
     !maPositions.priceAboveMA50 &&
@@ -342,7 +367,6 @@ function computeBTCReversalDetails(
     direction: maScore > 0 ? "bearish" : "neutral",
   });
 
-  // ── SIGNAL 8: Queda 24h (max 10pts) ────────────────────────────────────────
   let dropScore = 0;
   if (priceChange24h < -10) dropScore = 10;
   else if (priceChange24h < -5) dropScore = 5;
@@ -356,7 +380,6 @@ function computeBTCReversalDetails(
     direction: priceChange24h < -3 ? "bearish" : "neutral",
   });
 
-  // ── SIGNAL 9: Padrão de Candle 15m (max 15pts) ─────────────────────────────
   const wickResult = detectHammerOrWickRejection(klines15m);
   const engulfing15m = detectBullishEngulfing(klines15m);
   const engulfing1h = detectBullishEngulfing(klines1h);
@@ -384,7 +407,6 @@ function computeBTCReversalDetails(
     direction: candleScore > 0 ? "bullish" : "neutral",
   });
 
-  // ── SIGNAL 10: Liquidity Grab / Stop Hunt (max 15pts) ──────────────────────
   const lgResult15m = detectLiquidityGrab(klines15m);
   const lgResult1h = detectLiquidityGrab(klines1h);
   let lgScore = 0;
@@ -406,7 +428,6 @@ function computeBTCReversalDetails(
     direction: lgScore > 0 ? "bullish" : "neutral",
   });
 
-  // ── SIGNAL 11: Divergência de Volume 15m (max 10pts) ───────────────────────
   const volDiv = detectVolumeDivergence(klines15m);
   let volDivScore = 0;
   if (volDiv.type === "climax") volDivScore = 10;
@@ -420,7 +441,6 @@ function computeBTCReversalDetails(
     direction: volDivScore > 0 ? "bullish" : "neutral",
   });
 
-  // ── SIGNAL 12: CHOCH 15m (max 10pts) ───────────────────────────────────────
   const choch15m = detectCHOCH(klines15m);
   const choch1h = detectCHOCH(klines1h);
   let chochScore = 0;
@@ -446,7 +466,6 @@ function computeBTCReversalDetails(
     Math.round(signals.reduce((sum, s) => sum + s.score, 0)),
   );
 
-  // ── TOP REVERSAL (inverted logic) ──────────────────────────────────────────
   let topScore = 0;
   if (rsi4h > 70) topScore += 25;
   else if (rsi4h > 60) topScore += 15;
@@ -520,15 +539,23 @@ export function useBinanceData(interval: Interval = "1h") {
   // biome-ignore lint/correctness/useExhaustiveDependencies: interval not used inside, only for stable dep identity
   const refresh = useCallback(async () => {
     try {
-      const [klines1h, klines15m, klines4h, tickers, fundingRates, oi] =
-        await Promise.all([
-          fetchKlines("BTCUSDT", "1h", 200),
-          fetchKlines("BTCUSDT", "15m", 200),
-          fetchKlines("BTCUSDT", "4h", 200),
-          fetchAllTickers(),
-          fetchFundingRates(),
-          fetchOpenInterest("BTCUSDT"),
-        ]);
+      const [
+        klines1h,
+        klines15m,
+        klines4h,
+        tickers,
+        fundingRates,
+        oi,
+        takerBuyRatio,
+      ] = await Promise.all([
+        fetchKlines("BTCUSDT", "1h", 200),
+        fetchKlines("BTCUSDT", "15m", 200),
+        fetchKlines("BTCUSDT", "4h", 200),
+        fetchAllTickers(),
+        fetchFundingRates(),
+        fetchOpenInterest("BTCUSDT"),
+        fetchTakerRatio(),
+      ]);
 
       const closes1h = klines1h.map((k) => k.close);
       const closes15m = klines15m.map((k) => k.close);
@@ -594,6 +621,16 @@ export function useBinanceData(interval: Interval = "1h") {
         klines1h,
       );
 
+      const capitalFlowScore = computeCapitalFlowScore({
+        takerBuyRatio,
+        oiDeltaPct,
+        priceChange24h: btcChange,
+        fundingRate,
+        volumeSpike,
+        priceAboveMA20: maPositions.priceAboveMA20,
+        priceAboveMA50: maPositions.priceAboveMA50,
+      });
+
       setBtcMetrics({
         price,
         priceChange24h: btcChange,
@@ -602,6 +639,8 @@ export function useBinanceData(interval: Interval = "1h") {
         openInterest: oiValue,
         rsi: rsi1h,
         reversalScore: reversalDetails.totalScore,
+        capitalFlowScore,
+        takerBuyRatio,
         klines: klines1h,
         rsi15m,
         rsi4h,
@@ -774,13 +813,6 @@ export function useBinanceData(interval: Interval = "1h") {
   return { btcMetrics, altcoins, loading, error, lastUpdate, refresh };
 }
 
-/**
- * Fetches BTC kline data and auto-refreshes synchronized to the exact
- * candle close boundary for the selected interval.
- *
- * For example, with "1m" selected, the chart re-fetches at 00:01:00,
- * 00:02:00, 00:03:00 UTC -- not 60s after the app loaded.
- */
 export function useBTCChart(interval: Interval) {
   const [klines, setKlines] = useState<KlineData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -800,26 +832,21 @@ export function useBTCChart(interval: Interval) {
   }, [interval]);
 
   useEffect(() => {
-    // Clear any previous timers when interval changes
     if (timerRef.current !== null) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
 
-    // Fetch immediately
     load();
 
     const intervalMs = intervalToMs(interval);
 
-    // Schedule recurring fetches synchronized to candle boundaries.
-    // msUntilNext = time remaining until the next candle opens.
-    // We add a 500ms buffer to ensure the candle has closed on Binance's side.
     const schedule = () => {
       const now = Date.now();
       const msUntilNext = intervalMs - (now % intervalMs) + 500;
       timerRef.current = setTimeout(() => {
         load();
-        schedule(); // re-schedule for the next boundary
+        schedule();
       }, msUntilNext);
     };
 

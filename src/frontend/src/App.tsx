@@ -45,10 +45,7 @@ function Dashboard() {
           {/* BTC Fluxo de Capital */}
           <div style={{ display: activeTab === "btc" ? "block" : "none" }}>
             <div className="space-y-4">
-              <BTCThermometer
-                score={btcMetrics?.reversalScore ?? 0}
-                loading={loading}
-              />
+              <BTCThermometer btcMetrics={btcMetrics} loading={loading} />
               <BTCLiquidationComparison />
               <BTCPanel metrics={btcMetrics} loading={loading} />
             </div>
