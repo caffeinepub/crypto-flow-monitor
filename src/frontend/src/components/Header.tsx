@@ -26,11 +26,11 @@ export function Header({
   onTabChange,
 }: HeaderProps) {
   const tabs = [
+    { id: "market", label: "Análise do Mercado", icon: BarChart3 },
     { id: "btc", label: "BTC Fluxo de Capital", icon: TrendingUp },
-    { id: "scanner", label: "Scanner", icon: Scan },
-    { id: "market", label: "Mercado", icon: BarChart3 },
-    { id: "liquidacoes", label: "Liquidações", icon: Zap },
-    { id: "ordens", label: "Ordens", icon: BookOpen },
+    { id: "ordens", label: "Livro de Ordens - BTC", icon: BookOpen },
+    { id: "liquidacoes", label: "Feed Ao Vivo", icon: Zap },
+    { id: "scanner", label: "Altcoin Scanner", icon: Scan },
     { id: "bottrader", label: "Bot Trader", icon: Bot },
   ];
 

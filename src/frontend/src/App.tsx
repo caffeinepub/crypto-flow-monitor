@@ -19,7 +19,7 @@ const queryClient = new QueryClient();
 
 function Dashboard() {
   const [activeTab, setActiveTab] = useState<string>(() =>
-    loadUiState<string>("active_tab", "btc"),
+    loadUiState<string>("active_tab", "market"),
   );
   const { btcMetrics, altcoins, loading, lastUpdate, refresh } = useBinanceData(
     "1h" as Interval,
@@ -43,7 +43,12 @@ function Dashboard() {
         />
 
         <main className="max-w-[1600px] mx-auto px-4 py-4">
-          {/* BTC Fluxo de Capital */}
+          {/* 1 - Análise do Mercado */}
+          <div style={{ display: activeTab === "market" ? "block" : "none" }}>
+            <MercadoPanel isActive={activeTab === "market"} />
+          </div>
+
+          {/* 2 - BTC Fluxo de Capital */}
           <div style={{ display: activeTab === "btc" ? "block" : "none" }}>
             <div className="space-y-4">
               <BTCThermometer btcMetrics={btcMetrics} loading={loading} />
@@ -52,31 +57,26 @@ function Dashboard() {
             </div>
           </div>
 
-          {/* Scanner */}
-          <div style={{ display: activeTab === "scanner" ? "block" : "none" }}>
-            <div className="w-full">
-              <AltcoinScanner altcoins={altcoins} loading={loading} />
-            </div>
+          {/* 3 - Livro de Ordens - BTC */}
+          <div style={{ display: activeTab === "ordens" ? "block" : "none" }}>
+            <OrderFlowTab />
           </div>
 
-          {/* Mercado */}
-          <div style={{ display: activeTab === "market" ? "block" : "none" }}>
-            <MercadoPanel isActive={activeTab === "market"} />
-          </div>
-
-          {/* Liquidações */}
+          {/* 4 - Feed Ao Vivo */}
           <div
             style={{ display: activeTab === "liquidacoes" ? "block" : "none" }}
           >
             <LiquidacoesTab />
           </div>
 
-          {/* Ordens */}
-          <div style={{ display: activeTab === "ordens" ? "block" : "none" }}>
-            <OrderFlowTab />
+          {/* 5 - Altcoin Scanner */}
+          <div style={{ display: activeTab === "scanner" ? "block" : "none" }}>
+            <div className="w-full">
+              <AltcoinScanner altcoins={altcoins} loading={loading} />
+            </div>
           </div>
 
-          {/* Bot Trader */}
+          {/* 6 - Bot Trader */}
           <div
             style={{ display: activeTab === "bottrader" ? "block" : "none" }}
           >

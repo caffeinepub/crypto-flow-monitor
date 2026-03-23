@@ -4,9 +4,12 @@ import {
   BarChart2,
   Bitcoin,
   Flame,
+  MinusCircle,
   RefreshCw,
   ShieldAlert,
+  ShoppingCart,
   Sparkles,
+  TrendingDown,
   TrendingUp,
   Zap,
 } from "lucide-react";
@@ -169,6 +172,44 @@ const SECTOR_COLORS: Record<string, string> = {
   IA: "#FF3366",
   Gaming: "#F97316",
   "BTC Derivados": "#F59E0B",
+};
+
+// ─── Action Phrase Config ──────────────────────────────────────────────────
+
+const ACTION_PHRASE: Record<
+  "ALTISTA" | "BAIXISTA" | "NEUTRO",
+  {
+    label: string;
+    description: string;
+    color: string;
+    rgbValues: string;
+    Icon: React.ElementType;
+  }
+> = {
+  BAIXISTA: {
+    label: "Hora de Pensar em Comprar",
+    description:
+      "Momentos de correções de baixa, retoques e retestes em fundos duplos, zonas de suporte e áreas de grandes liquidações.",
+    color: "#00FF88",
+    rgbValues: "0,255,136",
+    Icon: ShoppingCart,
+  },
+  NEUTRO: {
+    label: "Não Faça Nada",
+    description:
+      "Momentos de indecisão, ativo já em movimento buscando alvos, liquidações em curso ou movimentos já definidos.",
+    color: "#22D3EE",
+    rgbValues: "34,211,238",
+    Icon: MinusCircle,
+  },
+  ALTISTA: {
+    label: "Hora de Pensar em Vender",
+    description:
+      "Topos duplos, áreas de grandes liquidações de posições short, vendas institucionais, topos históricos e resistências.",
+    color: "#FF3366",
+    rgbValues: "255,51,102",
+    Icon: TrendingDown,
+  },
 };
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -881,6 +922,55 @@ export function MercadoPanel({ isActive }: MercadoPanelProps) {
                   </div>
                 </div>
               </div>
+
+              {/* ── Action Phrase ── */}
+              {(() => {
+                const phrase = ACTION_PHRASE[analysis.sentimentLabel];
+                const { Icon } = phrase;
+                return (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1, duration: 0.4, ease: "easeOut" }}
+                    className="mt-4 rounded-lg px-4 py-3 flex items-start gap-3"
+                    style={{
+                      borderTop: "1px solid #1F2A3A",
+                      paddingTop: "16px",
+                      marginTop: "16px",
+                      background: `rgba(${phrase.rgbValues},0.06)`,
+                      borderLeft: `3px solid ${phrase.color}`,
+                    }}
+                    data-ocid="market.panel"
+                  >
+                    <div
+                      className="mt-0.5 flex-shrink-0 p-1.5 rounded-lg"
+                      style={{ background: `rgba(${phrase.rgbValues},0.12)` }}
+                    >
+                      <Icon
+                        className="w-5 h-5"
+                        style={{ color: phrase.color }}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span
+                        className="text-sm font-black tracking-wide uppercase"
+                        style={{
+                          color: phrase.color,
+                          textShadow: `0 0 12px ${phrase.color}50`,
+                        }}
+                      >
+                        {phrase.label}
+                      </span>
+                      <span
+                        className="text-xs leading-relaxed"
+                        style={{ color: "#9AA7B6" }}
+                      >
+                        {phrase.description}
+                      </span>
+                    </div>
+                  </motion.div>
+                );
+              })()}
             </motion.div>
 
             {/* ── Contexto + Dominância + Setores ── */}
