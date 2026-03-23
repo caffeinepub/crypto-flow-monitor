@@ -14,6 +14,7 @@ import {
   calculateStopLoss,
   calculateTakeProfits,
 } from "../utils/calculations";
+import { fetchMultiExchangeData } from "./useMultiExchangeData";
 
 const BASE = "https://fapi.binance.com";
 
@@ -78,6 +79,11 @@ function computeCapitalFlowScore({
   volumeSpike,
   priceAboveMA20,
   priceAboveMA50,
+  fearGreedIndex,
+  bybitFundingRate,
+  okxFundingRate,
+  bybitLongShortRatio,
+  coinGeckoBTCVolume24h,
 }: {
   takerBuyRatio: number;
   oiDeltaPct: number;
@@ -86,35 +92,62 @@ function computeCapitalFlowScore({
   volumeSpike: number;
   priceAboveMA20: boolean;
   priceAboveMA50: boolean;
+  fearGreedIndex: number | null;
+  bybitFundingRate: number | null;
+  okxFundingRate: number | null;
+  bybitLongShortRatio: number | null;
+  coinGeckoBTCVolume24h: number | null;
 }): number {
   let score = 0;
 
-  // Taker Buy Ratio (0-40 pts)
-  if (takerBuyRatio > 0.65) score += 40;
-  else if (takerBuyRatio > 0.55) score += 28;
-  else if (takerBuyRatio > 0.52) score += 18;
-  else if (takerBuyRatio >= 0.48) score += 10;
-  // < 0.48 → 0
+  // Taker Buy Ratio (0-35 pts)
+  if (takerBuyRatio > 0.65) score += 35;
+  else if (takerBuyRatio > 0.55) score += 24;
+  else if (takerBuyRatio > 0.52) score += 16;
+  else if (takerBuyRatio >= 0.48) score += 8;
 
   // OI Delta + Price Direction (0-20 pts)
   if (oiDeltaPct > 0 && priceChange24h > 0) score += 20;
   else if (oiDeltaPct < 0 && priceChange24h > 0) score += 12;
   else if (oiDeltaPct > 0 && priceChange24h < 0) score += 5;
 
-  // Funding Rate (0-20 pts)
-  if (fundingRate < -0.0005) score += 20;
-  else if (fundingRate < -0.0001) score += 14;
-  else if (fundingRate < 0) score += 8;
-  else if (fundingRate < 0.0001) score += 4;
-  // >= 0.0001 → 0
+  // Cross-exchange Funding Rate avg (0-20 pts)
+  const rates: number[] = [fundingRate];
+  if (bybitFundingRate !== null) rates.push(bybitFundingRate);
+  if (okxFundingRate !== null) rates.push(okxFundingRate);
+  const avgRate = rates.reduce((s, r) => s + r, 0) / rates.length;
 
-  // Volume Spike (0-10 pts)
-  if (volumeSpike > 2.5) score += 10;
-  else if (volumeSpike > 1.5) score += 5;
+  if (avgRate < -0.0005) score += 20;
+  else if (avgRate < -0.0001) score += 14;
+  else if (avgRate < 0) score += 8;
+  else if (avgRate < 0.0001) score += 4;
 
-  // Price vs MAs (0-10 pts)
-  if (priceAboveMA20 && priceAboveMA50) score += 10;
-  else if (priceAboveMA20) score += 5;
+  // Fear & Greed — contrarian (0-10 pts)
+  if (fearGreedIndex !== null) {
+    if (fearGreedIndex < 25) score += 10;
+    else if (fearGreedIndex < 40) score += 6;
+    else if (fearGreedIndex <= 60) score += 3;
+  }
+
+  // CoinGecko global volume (0-5 pts)
+  if (coinGeckoBTCVolume24h !== null) {
+    if (coinGeckoBTCVolume24h > 50_000_000_000) score += 5;
+    else if (coinGeckoBTCVolume24h > 30_000_000_000) score += 3;
+  }
+
+  // Volume Spike (0-8 pts)
+  if (volumeSpike > 2.5) score += 8;
+  else if (volumeSpike > 1.5) score += 4;
+
+  // Price vs MAs (0-7 pts)
+  if (priceAboveMA20 && priceAboveMA50) score += 7;
+  else if (priceAboveMA20) score += 3;
+
+  // Bybit long/short ratio bonus (0-5 pts)
+  if (bybitLongShortRatio !== null) {
+    if (bybitLongShortRatio > 0.6) score += 5;
+    else if (bybitLongShortRatio > 0.52) score += 2;
+  }
 
   return Math.min(100, Math.round(score));
 }
@@ -260,9 +293,18 @@ function computeBTCReversalDetails(
   },
   klines15m: KlineData[],
   klines1h: KlineData[],
+  multiExchange: {
+    bybitFundingRate: number | null;
+    okxFundingRate: number | null;
+    bybitLongShortRatio: number | null;
+    fearGreedIndex: number | null;
+    fearGreedLabel: string | null;
+    coinGeckoBTCVolume24h: number | null;
+  } | null,
 ): ReversalDetails {
   const signals: ReversalSignal[] = [];
 
+  // ── RSI signals ──────────────────────────────────────────────────────────
   let rsi4hScore = 0;
   if (rsi4h < 30) rsi4hScore = 25;
   else if (rsi4h < 40) rsi4hScore = 15;
@@ -301,20 +343,33 @@ function computeBTCReversalDetails(
     direction: rsi15m < 40 ? "bearish" : "neutral",
   });
 
+  // ── Funding Rate — cross-exchange average ────────────────────────────────
+  const fundingRatesArr: number[] = [fundingRate];
+  if (multiExchange?.bybitFundingRate != null)
+    fundingRatesArr.push(multiExchange.bybitFundingRate);
+  if (multiExchange?.okxFundingRate != null)
+    fundingRatesArr.push(multiExchange.okxFundingRate);
+  const avgFundingRate =
+    fundingRatesArr.reduce((s, r) => s + r, 0) / fundingRatesArr.length;
+  const exchangeCount = fundingRatesArr.length;
+
   let frScore = 0;
-  const frPct = fundingRate * 100;
-  if (fundingRate < -0.0005) frScore = 20;
-  else if (fundingRate < -0.0001) frScore = 12;
-  else if (fundingRate < 0) frScore = 5;
+  if (avgFundingRate < -0.0005) frScore = 20;
+  else if (avgFundingRate < -0.0001) frScore = 12;
+  else if (avgFundingRate < 0) frScore = 5;
+  const frPct = (avgFundingRate * 100).toFixed(4);
+  const frLabel =
+    exchangeCount > 1 ? `${frPct}% (${exchangeCount} bolsas)` : `${frPct}%`;
   signals.push({
     label: "Funding Rate",
-    value: `${frPct.toFixed(4)}%`,
+    value: frLabel,
     score: frScore,
     maxScore: 20,
     active: frScore > 0,
-    direction: fundingRate < 0 ? "bullish" : "neutral",
+    direction: avgFundingRate < 0 ? "bullish" : "neutral",
   });
 
+  // ── OI Delta ─────────────────────────────────────────────────────────────
   let oiScore = 0;
   if (oiDeltaPct > 2 && priceChange24h < 0) oiScore = 15;
   else if (oiDeltaPct > 0) oiScore = 5;
@@ -327,6 +382,7 @@ function computeBTCReversalDetails(
     direction: oiDeltaPct > 2 && priceChange24h < 0 ? "bullish" : "neutral",
   });
 
+  // ── Volume Spike ─────────────────────────────────────────────────────────
   let volScore = 0;
   if (volumeSpike > 2.5) volScore = 10;
   else if (volumeSpike > 1.5) volScore = 5;
@@ -339,6 +395,7 @@ function computeBTCReversalDetails(
     direction: volScore > 0 ? "bullish" : "neutral",
   });
 
+  // ── MA Positions ──────────────────────────────────────────────────────────
   const belowAll =
     !maPositions.priceAboveMA20 &&
     !maPositions.priceAboveMA50 &&
@@ -367,6 +424,7 @@ function computeBTCReversalDetails(
     direction: maScore > 0 ? "bearish" : "neutral",
   });
 
+  // ── 24h Price Drop ───────────────────────────────────────────────────────
   let dropScore = 0;
   if (priceChange24h < -10) dropScore = 10;
   else if (priceChange24h < -5) dropScore = 5;
@@ -380,6 +438,7 @@ function computeBTCReversalDetails(
     direction: priceChange24h < -3 ? "bearish" : "neutral",
   });
 
+  // ── Candle Patterns ──────────────────────────────────────────────────────
   const wickResult = detectHammerOrWickRejection(klines15m);
   const engulfing15m = detectBullishEngulfing(klines15m);
   const engulfing1h = detectBullishEngulfing(klines1h);
@@ -407,6 +466,7 @@ function computeBTCReversalDetails(
     direction: candleScore > 0 ? "bullish" : "neutral",
   });
 
+  // ── Liquidity Grab ───────────────────────────────────────────────────────
   const lgResult15m = detectLiquidityGrab(klines15m);
   const lgResult1h = detectLiquidityGrab(klines1h);
   let lgScore = 0;
@@ -428,6 +488,7 @@ function computeBTCReversalDetails(
     direction: lgScore > 0 ? "bullish" : "neutral",
   });
 
+  // ── Volume Divergence ────────────────────────────────────────────────────
   const volDiv = detectVolumeDivergence(klines15m);
   let volDivScore = 0;
   if (volDiv.type === "climax") volDivScore = 10;
@@ -441,6 +502,7 @@ function computeBTCReversalDetails(
     direction: volDivScore > 0 ? "bullish" : "neutral",
   });
 
+  // ── CHOCH ────────────────────────────────────────────────────────────────
   const choch15m = detectCHOCH(klines15m);
   const choch1h = detectCHOCH(klines1h);
   let chochScore = 0;
@@ -461,19 +523,67 @@ function computeBTCReversalDetails(
     direction: chochScore > 0 ? "bullish" : "neutral",
   });
 
+  // ── Fear & Greed (multi-exchange signal) ─────────────────────────────────
+  const fgIndex = multiExchange?.fearGreedIndex ?? null;
+  const fgLabelText = multiExchange?.fearGreedLabel ?? null;
+  let fgScore = 0;
+  let fgValue = "—";
+  if (fgIndex !== null) {
+    fgValue = `${fgIndex} (${fgLabelText ?? "—"})`;
+    if (fgIndex < 20)
+      fgScore = 12; // extreme fear → strong reversal signal
+    else if (fgIndex < 30) fgScore = 9;
+    else if (fgIndex < 40)
+      fgScore = 5; // fear
+    else if (fgIndex <= 50) fgScore = 2; // neutral-low
+  }
+  signals.push({
+    label: "Medo & Ganância",
+    value: fgValue,
+    score: fgScore,
+    maxScore: 12,
+    active: fgScore > 0,
+    direction: fgScore > 0 ? "bullish" : "neutral",
+  });
+
+  // ── Bybit Long/Short Ratio (cross-exchange sentiment) ────────────────────
+  const bybitRatio = multiExchange?.bybitLongShortRatio ?? null;
+  let bybitScore = 0;
+  let bybitValue = "—";
+  if (bybitRatio !== null) {
+    const shortRatio = 1 - bybitRatio;
+    bybitValue = `L ${(bybitRatio * 100).toFixed(1)}% / S ${(shortRatio * 100).toFixed(1)}%`;
+    // Majority short = sentiment washout = bullish reversal
+    if (bybitRatio < 0.35)
+      bybitScore = 8; // extreme short dominance
+    else if (bybitRatio < 0.45)
+      bybitScore = 5; // short majority
+    else if (bybitRatio < 0.5) bybitScore = 2; // slight short bias
+  }
+  signals.push({
+    label: "Sentimento Bybit",
+    value: bybitValue,
+    score: bybitScore,
+    maxScore: 8,
+    active: bybitScore > 0,
+    direction: bybitScore > 0 ? "bullish" : "neutral",
+  });
+
+  // ── Bottom score total ───────────────────────────────────────────────────
   const bottomScore = Math.min(
     100,
     Math.round(signals.reduce((sum, s) => sum + s.score, 0)),
   );
 
+  // ── Top (distribution) score ─────────────────────────────────────────────
   let topScore = 0;
   if (rsi4h > 70) topScore += 25;
   else if (rsi4h > 60) topScore += 15;
   if (rsi1h > 70) topScore += 20;
   else if (rsi1h > 60) topScore += 12;
   if (rsi15m > 70) topScore += 10;
-  if (fundingRate > 0.0005) topScore += 20;
-  else if (fundingRate > 0.0001) topScore += 12;
+  if (avgFundingRate > 0.0005) topScore += 20;
+  else if (avgFundingRate > 0.0001) topScore += 12;
   if (priceChange24h > 10) topScore += 10;
   else if (priceChange24h > 5) topScore += 5;
   const aboveAll =
@@ -482,6 +592,17 @@ function computeBTCReversalDetails(
     maPositions.priceAboveMA100 &&
     maPositions.priceAboveMA180;
   if (aboveAll) topScore += 10;
+  // Fear & Greed: extreme greed = top signal
+  if (fgIndex !== null) {
+    if (fgIndex > 80) topScore += 12;
+    else if (fgIndex > 70) topScore += 7;
+    else if (fgIndex > 60) topScore += 3;
+  }
+  // Bybit majority long = crowd too bullish = top signal
+  if (bybitRatio !== null) {
+    if (bybitRatio > 0.65) topScore += 8;
+    else if (bybitRatio > 0.55) topScore += 4;
+  }
   const bearishWick = (() => {
     const last = klines15m[klines15m.length - 1];
     if (!last) return false;
@@ -516,13 +637,31 @@ function scoreAltcoin(
   btcChange: number,
   volumeRatio: number,
   priceLowRatio: number,
+  crossFundingRate?: number,
+  fearGreedIndex?: number | null,
+  bybitLongShortRatio?: number | null,
 ): number {
   let score = 0;
-  if (fundingRate < 0) score += 20;
+  // Use cross-exchange funding average when available, otherwise Binance only
+  const effectiveFunding =
+    crossFundingRate !== undefined ? crossFundingRate : fundingRate;
+  if (effectiveFunding < -0.0005) score += 25;
+  else if (effectiveFunding < 0) score += 18;
   if (rsi < 40) score += 20;
   if (altChange > btcChange + 2) score += 25;
-  if (volumeRatio > 1.1) score += 15;
-  if (priceLowRatio < 1.05) score += 20;
+  if (volumeRatio > 1.1) score += 12;
+  if (priceLowRatio < 1.05) score += 15;
+  // Market sentiment boost from cross-exchange signals
+  if (fearGreedIndex !== null && fearGreedIndex !== undefined) {
+    if (fearGreedIndex < 25)
+      score += 8; // extreme fear => altcoin reversal opportunity
+    else if (fearGreedIndex < 40) score += 4;
+  }
+  if (bybitLongShortRatio !== null && bybitLongShortRatio !== undefined) {
+    if (bybitLongShortRatio < 0.4)
+      score += 5; // extreme short dominance on Bybit
+    else if (bybitLongShortRatio < 0.47) score += 2;
+  }
   return Math.min(score, 100);
 }
 
@@ -547,6 +686,7 @@ export function useBinanceData(interval: Interval = "1h") {
         fundingRates,
         oi,
         takerBuyRatio,
+        multiExchangeData,
       ] = await Promise.all([
         fetchKlines("BTCUSDT", "1h", 200),
         fetchKlines("BTCUSDT", "15m", 200),
@@ -555,6 +695,7 @@ export function useBinanceData(interval: Interval = "1h") {
         fetchFundingRates(),
         fetchOpenInterest("BTCUSDT"),
         fetchTakerRatio(),
+        fetchMultiExchangeData(),
       ]);
 
       const closes1h = klines1h.map((k) => k.close);
@@ -608,6 +749,7 @@ export function useBinanceData(interval: Interval = "1h") {
         priceAboveMA180: price > ma180,
       };
 
+      // Pass multi-exchange data into reversal score computation
       const reversalDetails = computeBTCReversalDetails(
         rsi1h,
         rsi15m,
@@ -619,7 +761,24 @@ export function useBinanceData(interval: Interval = "1h") {
         maPositions,
         klines15m,
         klines1h,
+        {
+          bybitFundingRate: multiExchangeData.bybitFundingRate,
+          okxFundingRate: multiExchangeData.okxFundingRate,
+          bybitLongShortRatio: multiExchangeData.bybitLongShortRatio,
+          fearGreedIndex: multiExchangeData.fearGreedIndex,
+          fearGreedLabel: multiExchangeData.fearGreedLabel,
+          coinGeckoBTCVolume24h: multiExchangeData.coinGeckoBTCVolume24h,
+        },
       );
+
+      // Compute avg funding rate across all available exchanges
+      const fundingRates3: number[] = [fundingRate];
+      if (multiExchangeData.bybitFundingRate !== null)
+        fundingRates3.push(multiExchangeData.bybitFundingRate);
+      if (multiExchangeData.okxFundingRate !== null)
+        fundingRates3.push(multiExchangeData.okxFundingRate);
+      const avgFundingRate =
+        fundingRates3.reduce((s, r) => s + r, 0) / fundingRates3.length;
 
       const capitalFlowScore = computeCapitalFlowScore({
         takerBuyRatio,
@@ -629,6 +788,11 @@ export function useBinanceData(interval: Interval = "1h") {
         volumeSpike,
         priceAboveMA20: maPositions.priceAboveMA20,
         priceAboveMA50: maPositions.priceAboveMA50,
+        fearGreedIndex: multiExchangeData.fearGreedIndex,
+        bybitFundingRate: multiExchangeData.bybitFundingRate,
+        okxFundingRate: multiExchangeData.okxFundingRate,
+        bybitLongShortRatio: multiExchangeData.bybitLongShortRatio,
+        coinGeckoBTCVolume24h: multiExchangeData.coinGeckoBTCVolume24h,
       });
 
       setBtcMetrics({
@@ -648,6 +812,16 @@ export function useBinanceData(interval: Interval = "1h") {
         volumeSpike,
         oiDeltaPct,
         reversalDetails,
+        multiExchange: {
+          fearGreedIndex: multiExchangeData.fearGreedIndex,
+          fearGreedLabel: multiExchangeData.fearGreedLabel,
+          bybitFundingRate: multiExchangeData.bybitFundingRate,
+          bybitLongShortRatio: multiExchangeData.bybitLongShortRatio,
+          okxFundingRate: multiExchangeData.okxFundingRate,
+          avgFundingRate,
+          coinGeckoBTCVolume24h: multiExchangeData.coinGeckoBTCVolume24h,
+          sourcesActive: multiExchangeData.sourcesActive,
+        },
       });
 
       const fundingMap: Record<string, number> = {};
@@ -685,6 +859,15 @@ export function useBinanceData(interval: Interval = "1h") {
           const proxyRSI = 20 + rangePos * 0.6;
           const volumeRatio = Number.parseFloat(t.quoteVolume) / 1_000_000;
           const priceLowRatio = low > 0 ? p / low : 2;
+          // Compute cross-exchange funding average for this altcoin
+          const baseSymbol = t.symbol.replace(/USDT$/, "");
+          const crossRates: number[] = [fr];
+          const bFr = multiExchangeData.bybitAltFunding?.[baseSymbol];
+          const oFr = multiExchangeData.okxAltFunding?.[baseSymbol];
+          if (bFr !== undefined) crossRates.push(bFr);
+          if (oFr !== undefined) crossRates.push(oFr);
+          const crossFundingRate =
+            crossRates.reduce((s, r) => s + r, 0) / crossRates.length;
           const score = scoreAltcoin(
             fr,
             proxyRSI,
@@ -692,6 +875,9 @@ export function useBinanceData(interval: Interval = "1h") {
             btcChange,
             volumeRatio,
             priceLowRatio,
+            crossFundingRate,
+            multiExchangeData.fearGreedIndex,
+            multiExchangeData.bybitLongShortRatio,
           );
           return {
             symbol: t.symbol.replace("USDT", ""),

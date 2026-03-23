@@ -107,6 +107,16 @@ export interface BTCMetrics {
   volumeSpike: number;
   oiDeltaPct: number;
   reversalDetails: ReversalDetails;
+  multiExchange?: {
+    fearGreedIndex: number | null;
+    fearGreedLabel: string | null;
+    bybitFundingRate: number | null;
+    bybitLongShortRatio: number | null;
+    okxFundingRate: number | null;
+    avgFundingRate: number;
+    coinGeckoBTCVolume24h: number | null;
+    sourcesActive: string[];
+  };
 }
 
 export type Interval = "1m" | "3m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";

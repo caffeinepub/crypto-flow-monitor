@@ -153,12 +153,21 @@ function filterCandidates(
   mod: ModalityId,
   eligible: AltcoinOpportunity[],
   reversalScore: number,
+  fearGreedIndex?: number | null,
 ): AltcoinOpportunity[] {
   const cfg = MODALITY_CONFIG[mod];
 
   if (reversalScore < cfg.minBtcScore) return [];
 
-  let candidates = eligible.filter((a) => a.score >= cfg.minScore);
+  const minScore =
+    fearGreedIndex !== null &&
+    fearGreedIndex !== undefined &&
+    fearGreedIndex < 20 &&
+    (mod === "holding" || mod === "tendencia")
+      ? Math.max(cfg.minScore, 80)
+      : cfg.minScore;
+
+  let candidates = eligible.filter((a) => a.score >= minScore);
 
   if (cfg.minVolatility !== undefined) {
     const minVol = cfg.minVolatility;
@@ -218,6 +227,8 @@ function buildOpenLog(
   mod: ModalityId,
   asset: AltcoinOpportunity,
   direction: "LONG" | "SHORT",
+  fearGreedIndex?: number | null,
+  bybitLSR?: number | null,
 ): string {
   const cfg = MODALITY_CONFIG[mod];
   const hints: string[] = [];
@@ -229,6 +240,16 @@ function buildOpenLog(
     hints.push(
       `volatilidade ${Math.abs(asset.priceChange24h).toFixed(1)}%/24h`,
     );
+  }
+  // Cross-exchange context
+  if (fearGreedIndex !== null && fearGreedIndex !== undefined) {
+    if (fearGreedIndex < 25) hints.push(`F&G: Medo Extremo(${fearGreedIndex})`);
+    else if (fearGreedIndex > 75)
+      hints.push(`F&G: Ganância Extrema(${fearGreedIndex})`);
+  }
+  if (bybitLSR !== null && bybitLSR !== undefined) {
+    const shortPct = ((1 - bybitLSR) * 100).toFixed(0);
+    if (bybitLSR < 0.4) hints.push(`Bybit: ${shortPct}% short`);
   }
   const tpStr = `TP: +${cfg.tp1Pct}%/+${cfg.tp2Pct}%/+${cfg.tp3Pct}%`;
   const slStr = `SL: -${cfg.slPct}%`;
@@ -273,6 +294,8 @@ function applyTradeLogic(
   let tradeHistory = [...state.tradeHistory];
   const reversalScore = btcMetrics?.reversalScore ?? 0;
   const reversalType = btcMetrics?.reversalDetails?.reversalType ?? "none";
+  const fearGreedIndex = btcMetrics?.multiExchange?.fearGreedIndex ?? null;
+  const bybitLSR = btcMetrics?.multiExchange?.bybitLongShortRatio ?? null;
 
   // Build price map from Scanner data
   const priceMap: Record<string, AltcoinOpportunity> = {};
@@ -352,13 +375,41 @@ function applyTradeLogic(
           status: "ACTIVE",
           openTime: Date.now(),
           pnlPct: 0,
-          botLog: buildOpenLog(mod, scannerAltcoin, "SHORT"),
+          botLog: buildOpenLog(
+            mod,
+            scannerAltcoin,
+            "SHORT",
+            fearGreedIndex,
+            bybitLSR,
+          ),
           partialsTaken: 0,
           score: scannerAltcoin.score,
         };
       } else {
         activeTrades[mod] = null;
       }
+      closed = true;
+    }
+
+    // BOT EXTREME GREED + REVERSAL: swing/tendencia LONG when market is overheated
+    if (
+      !closed &&
+      updated.direction === "LONG" &&
+      (mod === "swing" || mod === "tendencia") &&
+      fearGreedIndex !== null &&
+      fearGreedIndex > 80 &&
+      reversalScore > 65
+    ) {
+      const ct = {
+        ...updated,
+        status: "CLOSED" as const,
+        closeReason: "BOT_CLOSE" as const,
+        closedPrice: currentPrice,
+        closeTime: Date.now(),
+        botLog: `Ganância extrema (F&G: ${fearGreedIndex}) + BTC sobrecomprado — trade encerrado preventivamente`,
+      };
+      tradeHistory = [ct, ...tradeHistory].slice(0, 200);
+      activeTrades[mod] = null;
       closed = true;
     }
 
@@ -492,7 +543,12 @@ function applyTradeLogic(
   for (const mod of MODALITIES) {
     if (activeTrades[mod] !== null) continue;
 
-    const candidates = filterCandidates(mod, eligible, reversalScore);
+    const candidates = filterCandidates(
+      mod,
+      eligible,
+      reversalScore,
+      fearGreedIndex,
+    );
     if (candidates.length === 0) continue;
 
     const best = candidates[0];
@@ -516,7 +572,7 @@ function applyTradeLogic(
       status: "ACTIVE",
       openTime: Date.now(),
       pnlPct: 0,
-      botLog: buildOpenLog(mod, best, direction),
+      botLog: buildOpenLog(mod, best, direction, fearGreedIndex, bybitLSR),
       partialsTaken: 0,
       score: best.score,
     };

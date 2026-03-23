@@ -60,7 +60,7 @@ function Dashboard() {
 
           {/* Mercado */}
           <div style={{ display: activeTab === "market" ? "block" : "none" }}>
-            <MercadoPanel />
+            <MercadoPanel isActive={activeTab === "market"} />
           </div>
 
           {/* Liquidações */}

@@ -13,6 +13,7 @@ export function BTCThermometer({
   const score = btcMetrics?.capitalFlowScore ?? 50;
   const takerBuyRatio = btcMetrics?.takerBuyRatio ?? 0.5;
   const clampedScore = Math.max(0, Math.min(100, score));
+  const multiExchange = btcMetrics?.multiExchange;
 
   const directionLabel =
     clampedScore <= 35
@@ -34,6 +35,32 @@ export function BTCThermometer({
       : takerBuyRatio < 0.48
         ? "#EF4444"
         : "#9AA7B6";
+
+  // Fear & Greed helpers
+  const fgIndex = multiExchange?.fearGreedIndex ?? null;
+  const fgLabel = multiExchange?.fearGreedLabel ?? null;
+  const fgColor =
+    fgIndex === null
+      ? "#9AA7B6"
+      : fgIndex < 40
+        ? "#EF4444"
+        : fgIndex <= 60
+          ? "#EAB308"
+          : "#22C55E";
+
+  // Avg funding rate
+  const avgFundingRate = multiExchange?.avgFundingRate ?? null;
+  const avgFundingPct =
+    avgFundingRate !== null ? (avgFundingRate * 100).toFixed(4) : null;
+  const avgFundingColor =
+    avgFundingRate === null
+      ? "#9AA7B6"
+      : avgFundingRate < 0
+        ? "#22C55E"
+        : "#EF4444";
+
+  const sourcesActive = multiExchange?.sourcesActive ?? ["Binance"];
+  const allSources = ["Binance", "Bybit", "OKX", "F&G", "CoinGecko"];
 
   if (loading) {
     return (
@@ -144,9 +171,60 @@ export function BTCThermometer({
           · Intensidade: <span style={{ color: intColor }}>{intensity}</span>
         </span>
       </div>
+
+      {/* Taker Buy */}
       <div className="mt-2 text-xs" style={{ color: "#9AA7B6" }}>
         Taker Buy:{" "}
         <span style={{ color: takerColor, fontWeight: 600 }}>{takerPct}%</span>
+      </div>
+
+      {/* Fear & Greed */}
+      <div className="mt-1.5 text-xs" style={{ color: "#9AA7B6" }}>
+        Medo &amp; Ganância:{" "}
+        {fgIndex === null ? (
+          <span style={{ color: "#9AA7B6" }}>Carregando...</span>
+        ) : (
+          <span style={{ color: fgColor, fontWeight: 600 }}>
+            {fgIndex} — {fgLabel}
+          </span>
+        )}
+      </div>
+
+      {/* Cross-exchange avg funding */}
+      <div className="mt-1.5 text-xs" style={{ color: "#9AA7B6" }}>
+        Funding Médio (3 bolsas):{" "}
+        {avgFundingPct === null ? (
+          <span style={{ color: "#9AA7B6" }}>—</span>
+        ) : (
+          <span style={{ color: avgFundingColor, fontWeight: 600 }}>
+            {Number(avgFundingPct) >= 0 ? "+" : ""}
+            {avgFundingPct}%
+          </span>
+        )}
+      </div>
+
+      {/* Source badges */}
+      <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+        <span className="text-[10px]" style={{ color: "#9AA7B6" }}>
+          Fontes:
+        </span>
+        {allSources.map((src) => {
+          const active = sourcesActive.includes(src);
+          if (!active) return null;
+          return (
+            <span
+              key={src}
+              className="px-1.5 py-0.5 rounded text-[10px] font-mono"
+              style={{
+                border: "1px solid #22D3EE55",
+                color: "#22D3EE",
+                background: "#22D3EE11",
+              }}
+            >
+              {src}
+            </span>
+          );
+        })}
       </div>
     </motion.div>
   );
