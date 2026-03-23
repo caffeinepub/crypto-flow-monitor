@@ -9,6 +9,7 @@ import { CircuitBackground } from "./components/CircuitBackground";
 import { Header } from "./components/Header";
 import { LiquidacoesTab } from "./components/LiquidacoesTab";
 import { MercadoPanel } from "./components/MercadoPanel";
+import { OrderFlowTab } from "./components/OrderFlowTab";
 import { PWAInstallPrompt } from "./components/PWAInstallPrompt";
 import { useBinanceData } from "./hooks/useBinanceData";
 import type { Interval } from "./types/binance";
@@ -68,6 +69,11 @@ function Dashboard() {
             style={{ display: activeTab === "liquidacoes" ? "block" : "none" }}
           >
             <LiquidacoesTab />
+          </div>
+
+          {/* Ordens */}
+          <div style={{ display: activeTab === "ordens" ? "block" : "none" }}>
+            <OrderFlowTab />
           </div>
 
           {/* Bot Trader */}

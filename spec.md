@@ -1,25 +1,30 @@
 # Crypto Flow Monitor
 
 ## Current State
-The altcoin scanner uses proxyRSI (from price range, not klines). Top 10 altcoins have 15m klines fetched but no RSI/MAs calculated. Expanded card shows Entry, TP1-TP3, SL, R:R.
+App has 5 tabs: BTC Fluxo de Capital, Scanner, Mercado, Liquidações, Bot Trader.
+No order book / institutional order monitoring exists.
 
 ## Requested Changes (Diff)
 
 ### Add
-- Real RSI(14) from 15m klines for top 10 altcoins
-- MA20 and MA50 (EMA) from 15m klines for top 10 altcoins
-- New optional fields on AltcoinOpportunity: ma20, ma50, rsi14
-- Technical Indicators section in expanded Scanner card with RSI color coding and MA trend signal
+- New tab "Ordens" (OrderFlowTab component) with two sub-tabs: Spot (BTCUSDT) and Futuros (BTCUSDT perp)
+- Each sub-tab shows a live feed of large orders detected in the order book
+- Large order threshold: configurable by user (default $100k for spot, $500k for futures)
+- Order entry shows: side (BUY/SELL), price, quantity, USD value, timestamp of first appearance
+- Spoofing/manipulation detection: when a large order disappears from the book WITHOUT being executed (price never reached), mark it as "REMOVIDA" with a warning badge
+- Edge order detection: orders that are placed far from market price (>2% away) are flagged as possible manipulation
+- Real-time updates via Binance WebSocket for both spot and futures depth streams
+- Summary stats: total large buy wall value, total large sell wall value, buy/sell wall ratio
+- Visual: dark theme consistent with existing app, neon green for buy orders, neon red for sell orders, yellow/orange for removed/suspicious orders
 
 ### Modify
-- useBinanceData.ts: calculate RSI14, MA20, MA50 in enriched top-10 loop
-- AltcoinScanner.tsx: add indicators section in TPSLPanel
-- types/binance.ts: add optional ma20, ma50, rsi14 fields
+- Header.tsx: add new "Ordens" tab with appropriate icon
+- App.tsx: render OrderFlowTab for the new tab
 
 ### Remove
 - Nothing
 
 ## Implementation Plan
-1. Add optional ma20, ma50, rsi14 fields to AltcoinOpportunity type
-2. In enriched loop: calculate from fetched klines and attach to alt object
-3. Add Technical Indicators section in TPSLPanel in AltcoinScanner.tsx
+1. Create `src/frontend/src/components/OrderFlowTab.tsx` - main component with spot/futures sub-tabs, WebSocket connections, large order detection, spoofing detection, real-time feed
+2. Update `src/frontend/src/components/Header.tsx` to add the Ordens tab
+3. Update `src/frontend/src/App.tsx` to render OrderFlowTab

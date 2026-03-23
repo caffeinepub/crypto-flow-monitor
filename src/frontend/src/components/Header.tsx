@@ -1,6 +1,7 @@
 import {
   Activity,
   BarChart3,
+  BookOpen,
   Bot,
   RefreshCw,
   Scan,
@@ -29,6 +30,7 @@ export function Header({
     { id: "scanner", label: "Scanner", icon: Scan },
     { id: "market", label: "Mercado", icon: BarChart3 },
     { id: "liquidacoes", label: "Liquidações", icon: Zap },
+    { id: "ordens", label: "Ordens", icon: BookOpen },
     { id: "bottrader", label: "Bot Trader", icon: Bot },
   ];
 
