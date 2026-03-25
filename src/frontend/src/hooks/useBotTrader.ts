@@ -5,6 +5,7 @@ import {
   type ModalityId,
   type PatternSummary,
   type SimulatedTrade,
+  addRecentTrade,
   loadBotState,
   saveBotState,
 } from "../utils/botTraderStorage";
@@ -154,6 +155,7 @@ function filterCandidates(
   eligible: AltcoinOpportunity[],
   reversalScore: number,
   fearGreedIndex?: number | null,
+  recentSymbols?: Set<string>,
 ): AltcoinOpportunity[] {
   const cfg = MODALITY_CONFIG[mod];
 
@@ -179,6 +181,12 @@ function filterCandidates(
   }
   if (cfg.requireNegativeFunding) {
     candidates = candidates.filter((a) => a.fundingRate < 0);
+  }
+
+  // Prefer symbols not recently traded (avoid repeating last 3 failures)
+  if (recentSymbols && recentSymbols.size > 0) {
+    const preferFresh = candidates.filter((a) => !recentSymbols.has(a.symbol));
+    if (preferFresh.length > 0) candidates = preferFresh;
   }
 
   switch (cfg.sortBy) {
@@ -241,7 +249,6 @@ function buildOpenLog(
       `volatilidade ${Math.abs(asset.priceChange24h).toFixed(1)}%/24h`,
     );
   }
-  // Cross-exchange context
   if (fearGreedIndex !== null && fearGreedIndex !== undefined) {
     if (fearGreedIndex < 25) hints.push(`F&G: Medo Extremo(${fearGreedIndex})`);
     else if (fearGreedIndex > 75)
@@ -289,9 +296,11 @@ function applyTradeLogic(
   altcoins: AltcoinOpportunity[],
   btcMetrics: BTCMetrics | null,
   livePrices: Record<string, number>,
+  priceUpdateOnly = false, // if true, only update prices, skip open/close logic
 ): BotState {
   const activeTrades = { ...state.activeTrades };
   let tradeHistory = [...state.tradeHistory];
+  let recentByModality = { ...state.recentByModality };
   const reversalScore = btcMetrics?.reversalScore ?? 0;
   const reversalType = btcMetrics?.reversalDetails?.reversalType ?? "none";
   const fearGreedIndex = btcMetrics?.multiExchange?.fearGreedIndex ?? null;
@@ -306,14 +315,18 @@ function applyTradeLogic(
     const trade = activeTrades[mod];
     if (!trade || trade.status === "CLOSED") continue;
 
-    // Use Scanner price first, then live-fetched price, then keep last known price
+    // Use Scanner price first, then live-fetched price, then keep last known
     const scannerAltcoin = priceMap[trade.symbol];
     const livePrice = livePrices[trade.symbol];
     const currentPrice =
       scannerAltcoin?.price ?? livePrice ?? trade.currentPrice;
 
-    let updated = { ...trade, currentPrice };
-    const cfg = MODALITY_CONFIG[mod];
+    let updated = {
+      ...trade,
+      currentPrice,
+      lastPriceAt:
+        currentPrice !== trade.currentPrice ? Date.now() : trade.lastPriceAt,
+    };
 
     if (updated.direction === "LONG") {
       updated.pnlPct = ((currentPrice - updated.entry) / updated.entry) * 100;
@@ -321,7 +334,14 @@ function applyTradeLogic(
       updated.pnlPct = ((updated.entry - currentPrice) / updated.entry) * 100;
     }
 
+    // If price-update-only mode (startup), skip open/close evaluations
+    if (priceUpdateOnly) {
+      activeTrades[mod] = updated;
+      continue;
+    }
+
     let closed = false;
+    const cfg = MODALITY_CONFIG[mod];
 
     // BOT EARLY CLOSE: scalp/daytrade LONG on strong BTC top
     if (
@@ -340,6 +360,7 @@ function applyTradeLogic(
         botLog: "BTC com sinal de topo forte — trade fechado preventivamente",
       };
       tradeHistory = [ct, ...tradeHistory].slice(0, 200);
+      recentByModality = addRecentTrade(recentByModality, ct);
       activeTrades[mod] = null;
       closed = true;
     }
@@ -361,6 +382,7 @@ function applyTradeLogic(
         botLog: "Reversão BTC detectada — trade invertido para SHORT",
       };
       tradeHistory = [ct, ...tradeHistory].slice(0, 200);
+      recentByModality = addRecentTrade(recentByModality, ct);
       if (scannerAltcoin) {
         const entry = currentPrice;
         const targets = computeTargets(mod, entry, "SHORT");
@@ -391,7 +413,7 @@ function applyTradeLogic(
       closed = true;
     }
 
-    // BOT EXTREME GREED + REVERSAL: swing/tendencia LONG when market is overheated
+    // BOT EXTREME GREED + REVERSAL
     if (
       !closed &&
       updated.direction === "LONG" &&
@@ -409,11 +431,12 @@ function applyTradeLogic(
         botLog: `Ganância extrema (F&G: ${fearGreedIndex}) + BTC sobrecomprado — trade encerrado preventivamente`,
       };
       tradeHistory = [ct, ...tradeHistory].slice(0, 200);
+      recentByModality = addRecentTrade(recentByModality, ct);
       activeTrades[mod] = null;
       closed = true;
     }
 
-    // BOT ADVERSE FUNDING: scalp LONG with very positive funding
+    // BOT ADVERSE FUNDING
     if (
       !closed &&
       updated.direction === "LONG" &&
@@ -430,6 +453,7 @@ function applyTradeLogic(
         botLog: "Funding rate adverso — scalp encerrado",
       };
       tradeHistory = [updated, ...tradeHistory].slice(0, 200);
+      recentByModality = addRecentTrade(recentByModality, updated);
       activeTrades[mod] = null;
       closed = true;
     }
@@ -447,6 +471,7 @@ function applyTradeLogic(
             botLog: "TP3 atingido — trade encerrado com lucro total 🎯",
           };
           tradeHistory = [updated, ...tradeHistory].slice(0, 200);
+          recentByModality = addRecentTrade(recentByModality, updated);
           activeTrades[mod] = null;
           closed = true;
         } else if (currentPrice >= updated.tp2 && updated.partialsTaken === 1) {
@@ -474,6 +499,7 @@ function applyTradeLogic(
             botLog: "Stop loss atingido — posição encerrada",
           };
           tradeHistory = [updated, ...tradeHistory].slice(0, 200);
+          recentByModality = addRecentTrade(recentByModality, updated);
           activeTrades[mod] = null;
           closed = true;
         }
@@ -489,6 +515,7 @@ function applyTradeLogic(
             botLog: "TP3 SHORT atingido — trade encerrado com lucro total 🎯",
           };
           tradeHistory = [updated, ...tradeHistory].slice(0, 200);
+          recentByModality = addRecentTrade(recentByModality, updated);
           activeTrades[mod] = null;
           closed = true;
         } else if (currentPrice <= updated.tp2 && updated.partialsTaken === 1) {
@@ -516,6 +543,7 @@ function applyTradeLogic(
             botLog: "Stop loss SHORT atingido — posição encerrada",
           };
           tradeHistory = [updated, ...tradeHistory].slice(0, 200);
+          recentByModality = addRecentTrade(recentByModality, updated);
           activeTrades[mod] = null;
           closed = true;
         }
@@ -524,6 +552,10 @@ function applyTradeLogic(
         activeTrades[mod] = updated;
       }
     }
+  }
+
+  if (priceUpdateOnly) {
+    return { activeTrades, tradeHistory, recentByModality };
   }
 
   // ── Open new trades for empty slots ───────────────────────────────────────
@@ -543,11 +575,18 @@ function applyTradeLogic(
   for (const mod of MODALITIES) {
     if (activeTrades[mod] !== null) continue;
 
+    // Build a set of recently-traded symbols for this modality to avoid
+    // immediately re-entering the same losing symbols
+    const recentSymbols = new Set(
+      (recentByModality[mod] ?? []).map((t) => t.symbol),
+    );
+
     const candidates = filterCandidates(
       mod,
       eligible,
       reversalScore,
       fearGreedIndex,
+      recentSymbols,
     );
     if (candidates.length === 0) continue;
 
@@ -575,11 +614,12 @@ function applyTradeLogic(
       botLog: buildOpenLog(mod, best, direction, fearGreedIndex, bybitLSR),
       partialsTaken: 0,
       score: best.score,
+      lastPriceAt: Date.now(),
     };
     activeSymbols.add(best.symbol);
   }
 
-  return { activeTrades, tradeHistory };
+  return { activeTrades, tradeHistory, recentByModality };
 }
 
 export function useBotTrader(
@@ -595,6 +635,31 @@ export function useBotTrader(
 
   const btcMetricsRef = useRef(btcMetrics);
   btcMetricsRef.current = btcMetrics;
+
+  // On mount: fetch live prices for ALL active trades immediately,
+  // then update prices without triggering TP/SL logic (priceUpdateOnly=true).
+  // This ensures restored trades show current prices before any evaluation.
+  useEffect(() => {
+    const initializePrices = async () => {
+      const current = stateRef.current;
+      const activeSymbols = MODALITIES.map(
+        (m) => current.activeTrades[m]?.symbol,
+      ).filter((s): s is string => !!s);
+
+      if (activeSymbols.length === 0) return;
+
+      const livePrices = await fetchLivePrices(activeSymbols);
+      if (Object.keys(livePrices).length === 0) return;
+
+      setState((prev) => {
+        const next = applyTradeLogic(prev, [], null, livePrices, true);
+        saveBotState(next);
+        return next;
+      });
+    };
+    initializePrices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Get symbols of active trades that need direct price feeds
   const getActiveSymbols = useCallback((): string[] => {
@@ -623,7 +688,6 @@ export function useBotTrader(
       const livePrices = await fetchLivePrices(symbolsToFetch);
 
       setState((prev) => {
-        // Check if any active trade needs a price update
         const needsUpdate = MODALITIES.some((m) => {
           const t = prev.activeTrades[m];
           if (!t) return false;
@@ -656,6 +720,7 @@ export function useBotTrader(
   return {
     activeTrades: state.activeTrades,
     tradeHistory: state.tradeHistory,
+    recentByModality: state.recentByModality,
     patterns,
   };
 }

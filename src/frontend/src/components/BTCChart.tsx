@@ -27,7 +27,7 @@ interface SRLevel {
 interface AccumZone {
   priceMin: number;
   priceMax: number;
-  strength: number; // 0-1
+  strength: number;
   totalVol: number;
 }
 
@@ -172,7 +172,6 @@ function drawChart(
 
   const W = rect.width;
   const H = rect.height;
-  // PAD.right needs to be large enough for S/R labels
   const PAD = { top: 10, right: 80, bottom: 30, left: 65 };
   const chartW = W - PAD.left - PAD.right;
   const chartH = H - PAD.top - PAD.bottom;
@@ -220,13 +219,13 @@ function drawChart(
     );
   }
 
-  // === LAYER 1: Accumulation as horizontal bars (volume profile style, left side) ===
+  // === LAYER 1: Accumulation ===
   if (overlays.showAccum && overlays.accumZones.length > 0) {
     const maxStrength = Math.max(
       ...overlays.accumZones.map((z) => z.strength),
       0.01,
     );
-    const maxBarW = 55; // max bar width in px
+    const maxBarW = 55;
 
     for (const zone of overlays.accumZones) {
       const y1 = toY(zone.priceMax);
@@ -234,13 +233,11 @@ function drawChart(
       const barH = Math.max(1, y2 - y1);
       const normalizedStrength = zone.strength / maxStrength;
       const barW = normalizedStrength * maxBarW;
-      const alpha = 0.25 + normalizedStrength * 0.55; // 0.25 to 0.80
+      const alpha = 0.25 + normalizedStrength * 0.55;
 
-      // Bar from left edge
       ctx.fillStyle = `rgba(34,211,238,${alpha})`;
       ctx.fillRect(PAD.left, y1, barW, barH);
 
-      // Right border line of bar
       ctx.strokeStyle = `rgba(34,211,238,${Math.min(1, alpha + 0.2)})`;
       ctx.lineWidth = 1;
       ctx.setLineDash([]);
@@ -251,15 +248,13 @@ function drawChart(
     }
   }
 
-  // === LAYER 2: Support/Resistance -- thin dashed lines, vivid colors ===
+  // === LAYER 2: Support/Resistance ===
   if (overlays.showSR) {
     for (const lvl of overlays.srLevels) {
       const y = toY(lvl.price);
       const isSupport = lvl.type === "support";
-      // Vivid neon colors
       const color = isSupport ? "#00FF88" : "#FF3366";
 
-      // Always dashed, very thin
       ctx.strokeStyle = color;
       ctx.lineWidth = 0.6;
       ctx.setLineDash([5, 5]);
@@ -272,7 +267,6 @@ function drawChart(
       ctx.setLineDash([]);
       ctx.globalAlpha = 1;
 
-      // Label on right (outside chart area)
       const label = isSupport ? "S" : "R";
       const priceStr =
         lvl.price >= 1000 ? lvl.price.toFixed(0) : lvl.price.toFixed(2);
@@ -317,7 +311,6 @@ function drawChart(
       const size =
         order.usdValue >= 1_000_000 ? 8 : order.usdValue >= 500_000 ? 6 : 4;
 
-      // Thin dashed horizontal line
       ctx.strokeStyle = color;
       ctx.lineWidth = 0.6;
       ctx.globalAlpha = 0.45;
@@ -329,7 +322,6 @@ function drawChart(
       ctx.setLineDash([]);
       ctx.globalAlpha = 1;
 
-      // Diamond on left
       ctx.fillStyle = color;
       ctx.beginPath();
       ctx.moveTo(PAD.left + 8, y);
@@ -339,7 +331,6 @@ function drawChart(
       ctx.closePath();
       ctx.fill();
 
-      // Larger, visible label
       const usd =
         order.usdValue >= 1_000_000
           ? `$${(order.usdValue / 1_000_000).toFixed(1)}M`
@@ -347,7 +338,6 @@ function drawChart(
       ctx.fillStyle = color;
       ctx.font = "bold 12px monospace";
       ctx.textAlign = "left";
-      // Background pill for readability
       const labelX = PAD.left + 8 + size * 2 + 5;
       const textW = ctx.measureText(usd).width;
       ctx.fillStyle = "rgba(15,22,34,0.75)";
@@ -367,7 +357,6 @@ function drawChart(
         : "#EF4444"
       : "#22D3EE";
 
-    // Dashed price line
     ctx.strokeStyle = priceColor;
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
@@ -379,7 +368,6 @@ function drawChart(
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
 
-    // Price box on right axis
     const priceLabel = currentPrice.toFixed(1);
     ctx.font = "bold 12px monospace";
     const labelW = ctx.measureText(priceLabel).width + 10;
@@ -449,15 +437,35 @@ export function BTCChart() {
   const [interval, setChartInterval] = useState<Interval>("1m");
   const { klines, loading } = useBTCChart(interval);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const [showSR, setShowSR] = useState(true);
   const [showAccum, setShowAccum] = useState(true);
   const [showOrders, setShowOrders] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const [srLevels, setSrLevels] = useState<SRLevel[]>([]);
   const [accumZones, setAccumZones] = useState<AccumZone[]>([]);
   const [largeOrders, setLargeOrders] = useState<LargeOrder[]>([]);
   const [currentPrice, setCurrentPrice] = useState(0);
+
+  // Track fullscreen state changes (e.g. user presses Escape)
+  useEffect(() => {
+    const onFsChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(async () => {
+    if (!containerRef.current) return;
+    if (!document.fullscreenElement) {
+      await containerRef.current.requestFullscreen();
+    } else {
+      await document.exitFullscreen();
+    }
+  }, []);
 
   useEffect(() => {
     if (klines.length < 10) return;
@@ -476,7 +484,6 @@ export function BTCChart() {
     return () => clearInterval(id);
   }, []);
 
-  // Real-time price feed
   useEffect(() => {
     fetchCurrentPrice().then(setCurrentPrice);
     let ws: WebSocket | null = null;
@@ -569,8 +576,21 @@ export function BTCChart() {
 
   return (
     <div
+      ref={containerRef}
       className="rounded-xl overflow-hidden"
-      style={{ background: "#0F1622", border: "2px solid #1F2A3A" }}
+      style={{
+        background: "#0F1622",
+        border: "2px solid #1F2A3A",
+        // When fullscreen, fill the entire screen
+        ...(isFullscreen
+          ? {
+              display: "flex",
+              flexDirection: "column",
+              height: "100vh",
+              borderRadius: 0,
+            }
+          : {}),
+      }}
     >
       <div
         className="flex flex-wrap items-center gap-2 p-3 border-b"
@@ -614,7 +634,9 @@ export function BTCChart() {
                     ? "rgba(34,211,238,0.15)"
                     : "transparent",
                 color: interval === iv.value ? "#22D3EE" : "#9AA7B6",
-                border: `1px solid ${interval === iv.value ? "rgba(34,211,238,0.5)" : "transparent"}`,
+                border: `1px solid ${
+                  interval === iv.value ? "rgba(34,211,238,0.5)" : "transparent"
+                }`,
                 boxShadow:
                   interval === iv.value
                     ? "0 0 8px rgba(34,211,238,0.2)"
@@ -643,9 +665,69 @@ export function BTCChart() {
             "#F59E0B",
           )}
         </div>
+
+        {/* Fullscreen toggle button */}
+        <div className="ml-auto">
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? "Sair da tela cheia" : "Tela cheia"}
+            className="flex items-center justify-center w-7 h-7 rounded transition-all"
+            style={{
+              background: isFullscreen
+                ? "rgba(34,211,238,0.15)"
+                : "transparent",
+              color: isFullscreen ? "#22D3EE" : "#6B7280",
+              border: `1px solid ${
+                isFullscreen ? "rgba(34,211,238,0.4)" : "#1F2A3A"
+              }`,
+            }}
+          >
+            {isFullscreen ? (
+              // Compress icon
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <title>Sair da tela cheia</title>
+                <path d="M8 3v3a2 2 0 0 1-2 2H3" />
+                <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+                <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+                <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+              </svg>
+            ) : (
+              // Expand icon
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <title>Tela cheia</title>
+                <path d="M3 7V3h4" />
+                <path d="M21 7V3h-4" />
+                <path d="M3 17v4h4" />
+                <path d="M21 17v4h-4" />
+              </svg>
+            )}
+          </button>
+        </div>
       </div>
 
-      <div className="relative" style={{ height: 380 }}>
+      <div
+        className="relative"
+        style={isFullscreen ? { flex: 1 } : { height: 380 }}
+      >
         {loading && (
           <div
             className="absolute inset-0 flex items-center justify-center z-10"
