@@ -47,6 +47,21 @@ export interface OpenInterestData {
   time: number;
 }
 
+export interface SmartMoneyMetrics {
+  /** Long/Short Ratio — abaixo de 0.5 = muito vendido */
+  lsr: number | null;
+  /** Acumulação 15m score (1-5, 5 = acumulação forte) */
+  range15m: number;
+  /** Quantos TFs (15m, 1h, 4h) o ativo tem correlação positiva com BTC */
+  expBtcCount: number;
+  /** Nomes dos TFs com exp_btc positivo */
+  expBtcTFs: string[];
+  /** Score Smart Money composto (0-100) */
+  smartMoneyScore: number;
+  /** Setup textbook: FR negativo + LSR baixo + range alto + expBtc positivo */
+  isSmartMoneySetup: boolean;
+}
+
 export interface AltcoinOpportunity {
   symbol: string;
   price: number;
@@ -67,6 +82,8 @@ export interface AltcoinOpportunity {
   rsi14?: number;
   ma20?: number;
   ma50?: number;
+  // Smart Money metrics (available for top 10 enriched assets)
+  smartMoney?: SmartMoneyMetrics;
 }
 
 export interface ReversalSignal {

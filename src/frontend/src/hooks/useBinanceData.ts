@@ -6,6 +6,7 @@ import type {
   KlineData,
   ReversalDetails,
   ReversalSignal,
+  SmartMoneyMetrics,
 } from "../types/binance";
 import {
   calculateEMA,
@@ -630,6 +631,123 @@ function computeBTCReversalDetails(
   };
 }
 
+// ─── SMART MONEY METRICS ────────────────────────────────────────────────────
+
+async function fetchLSR(symbol: string): Promise<number | null> {
+  try {
+    const res = await fetch(
+      `${BASE}/futures/data/globalLongShortAccountRatio?symbol=${symbol}USDT&period=5m&limit=1`,
+    );
+    const data: { longShortRatio: string }[] = await res.json();
+    if (!Array.isArray(data) || !data.length) return null;
+    return Number.parseFloat(data[0].longShortRatio);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Accumulation score (1–5) based on range compression in the last 5 candles vs the prior 15.
+ * Score 5 = very tight range = strong accumulation zone.
+ */
+function computeRange15m(klines: KlineData[]): number {
+  if (klines.length < 20) return 1;
+  const recent = klines.slice(-5);
+  const baseline = klines.slice(-20, -5);
+  const recentRange =
+    Math.max(...recent.map((k) => k.high)) -
+    Math.min(...recent.map((k) => k.low));
+  const baselineRanges = baseline.map((k) => k.high - k.low);
+  const avgBaselineRange =
+    baselineRanges.reduce((s, r) => s + r, 0) / (baselineRanges.length || 1);
+  if (avgBaselineRange === 0) return 1;
+  const ratio = recentRange / avgBaselineRange;
+  if (ratio < 0.25) return 5;
+  if (ratio < 0.45) return 4;
+  if (ratio < 0.65) return 3;
+  if (ratio < 0.85) return 2;
+  return 1;
+}
+
+/**
+ * Counts how many timeframes (15m, 1h, 4h) the altcoin has positive BTC exposure —
+ * i.e., moves in the same bullish direction as BTC or shows relative strength.
+ */
+function computeExpBtcPositive(
+  altKlines: KlineData[],
+  btcKlines: KlineData[],
+): { count: number; tfs: string[] } {
+  const windows = [
+    { name: "15m", candles: 1 },
+    { name: "1h", candles: 4 },
+    { name: "4h", candles: 16 },
+  ];
+  const positiveTFs: string[] = [];
+  for (const w of windows) {
+    const altLen = altKlines.length;
+    const btcLen = btcKlines.length;
+    if (altLen <= w.candles || btcLen <= w.candles) continue;
+    const altNow = altKlines[altLen - 1].close;
+    const altPrev = altKlines[altLen - 1 - w.candles].open;
+    const btcNow = btcKlines[btcLen - 1].close;
+    const btcPrev = btcKlines[btcLen - 1 - w.candles].open;
+    const altChg = altPrev !== 0 ? (altNow - altPrev) / altPrev : 0;
+    const btcChg = btcPrev !== 0 ? (btcNow - btcPrev) / btcPrev : 0;
+    // Positive exp_btc: both bullish, or altcoin outperforming BTC's downside
+    if (btcChg >= 0 && altChg >= 0) positiveTFs.push(w.name);
+    else if (btcChg < 0 && altChg > btcChg + 0.005) positiveTFs.push(w.name);
+  }
+  return { count: positiveTFs.length, tfs: positiveTFs };
+}
+
+function computeSmartMoneyMetrics(
+  lsr: number | null,
+  range15m: number,
+  expBtcCount: number,
+  expBtcTFs: string[],
+  fundingRate: number,
+): SmartMoneyMetrics {
+  let sm = 0;
+
+  // Funding Rate negativo (peso 30)
+  if (fundingRate < -0.0005) sm += 30;
+  else if (fundingRate < -0.0001) sm += 22;
+  else if (fundingRate < 0) sm += 12;
+
+  // LSR baixo = muito vendido = squeeze potencial (peso 30)
+  if (lsr !== null) {
+    if (lsr < 0.3) sm += 30;
+    else if (lsr < 0.4) sm += 22;
+    else if (lsr < 0.5) sm += 14;
+    else if (lsr < 0.6) sm += 6;
+  }
+
+  // Acumulação no 15m (peso 20)
+  sm += (range15m - 1) * 5; // 0–20 pts
+
+  // exp_btc positivo em múltiplos TFs (peso 20)
+  sm += expBtcCount * 7; // 0, 7, 14, 21 → capped at 20
+  sm = Math.min(sm, 20 + (lsr !== null ? 30 : 0) + 30 + 20);
+
+  const smartMoneyScore = Math.min(100, Math.round(sm));
+
+  // Setup textbook: todos os critérios presentes
+  const isSmartMoneySetup =
+    fundingRate < 0 &&
+    (lsr === null || lsr < 0.5) &&
+    range15m >= 3 &&
+    expBtcCount >= 2;
+
+  return {
+    lsr,
+    range15m,
+    expBtcCount,
+    expBtcTFs,
+    smartMoneyScore,
+    isSmartMoneySetup,
+  };
+}
+
 function scoreAltcoin(
   fundingRate: number,
   rsi: number,
@@ -972,6 +1090,21 @@ export function useBinanceData(interval: Interval = "1h") {
           const ma20 = ma20arr[ma20arr.length - 1] ?? 0;
           const ma50 = ma50arr[ma50arr.length - 1] ?? 0;
 
+          // ── Smart Money Metrics ─────────────────────────────────────────
+          const lsr = await fetchLSR(alt.symbol);
+          const range15m = computeRange15m(klines15mAlt);
+          const { count: expBtcCount, tfs: expBtcTFs } = computeExpBtcPositive(
+            klines15mAlt,
+            klines15m,
+          );
+          const smartMoney = computeSmartMoneyMetrics(
+            lsr,
+            range15m,
+            expBtcCount,
+            expBtcTFs,
+            alt.fundingRate,
+          );
+
           return {
             ...alt,
             klines: klines15mAlt,
@@ -984,6 +1117,7 @@ export function useBinanceData(interval: Interval = "1h") {
             rsi14,
             ma20,
             ma50,
+            smartMoney,
           };
         }),
       );

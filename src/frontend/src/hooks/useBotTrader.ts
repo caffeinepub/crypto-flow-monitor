@@ -183,6 +183,21 @@ function filterCandidates(
     candidates = candidates.filter((a) => a.fundingRate < 0);
   }
 
+  // Smart Money filter: for quality modalities, require Smart Money setup
+  if (mod === "swing" || mod === "tendencia" || mod === "holding") {
+    const smCandidates = candidates.filter(
+      (a) => a.smartMoney?.isSmartMoneySetup === true,
+    );
+    // Only apply hard filter if we have at least one qualifying asset
+    if (smCandidates.length > 0) candidates = smCandidates;
+  } else {
+    // For scalp/daytrade: prefer Smart Money setups but don't require
+    const smCandidates = candidates.filter(
+      (a) => a.smartMoney?.isSmartMoneySetup === true,
+    );
+    if (smCandidates.length > 0) candidates = smCandidates;
+  }
+
   // Prefer symbols not recently traded (avoid repeating last 3 failures)
   if (recentSymbols && recentSymbols.size > 0) {
     const preferFresh = candidates.filter((a) => !recentSymbols.has(a.symbol));

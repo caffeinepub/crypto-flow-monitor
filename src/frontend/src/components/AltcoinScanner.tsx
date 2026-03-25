@@ -429,6 +429,247 @@ function TPSLPanel({ alt }: { alt: AltcoinOpportunity }) {
             </div>
           </div>
         )}
+
+        {/* Smart Money Metrics */}
+        {alt.smartMoney && (
+          <div
+            className="mt-2 rounded-lg px-2 py-2"
+            style={{
+              background: alt.smartMoney.isSmartMoneySetup
+                ? "rgba(34,197,94,0.07)"
+                : "rgba(234,179,8,0.05)",
+              border: alt.smartMoney.isSmartMoneySetup
+                ? "1px solid rgba(34,197,94,0.35)"
+                : "1px solid rgba(234,179,8,0.25)",
+            }}
+          >
+            <div className="flex items-center gap-2 mb-1.5">
+              <span
+                className="text-xs font-bold"
+                style={{
+                  color: alt.smartMoney.isSmartMoneySetup
+                    ? "#22C55E"
+                    : "#EAB308",
+                }}
+              >
+                {alt.smartMoney.isSmartMoneySetup
+                  ? "🧠 Smart Money Setup"
+                  : "📊 Smart Money"}
+              </span>
+              <span
+                className="text-xs px-1.5 py-0.5 rounded font-bold"
+                style={{
+                  background: alt.smartMoney.isSmartMoneySetup
+                    ? "rgba(34,197,94,0.15)"
+                    : "rgba(234,179,8,0.15)",
+                  color: alt.smartMoney.isSmartMoneySetup
+                    ? "#22C55E"
+                    : "#EAB308",
+                }}
+              >
+                {alt.smartMoney.smartMoneyScore}/100
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {/* Funding Rate */}
+              <div
+                className="rounded px-2 py-1.5"
+                style={{
+                  background:
+                    alt.fundingRate < 0
+                      ? "rgba(34,197,94,0.08)"
+                      : "rgba(239,68,68,0.08)",
+                  border:
+                    alt.fundingRate < 0
+                      ? "1px solid rgba(34,197,94,0.3)"
+                      : "1px solid rgba(239,68,68,0.3)",
+                }}
+              >
+                <div className="text-xs mb-0.5" style={{ color: "#9AA7B6" }}>
+                  Funding Rate
+                </div>
+                <div
+                  className="text-xs font-bold font-mono"
+                  style={{ color: alt.fundingRate < 0 ? "#22C55E" : "#EF4444" }}
+                >
+                  {(alt.fundingRate * 100).toFixed(4)}%
+                </div>
+                <div
+                  className="text-xs"
+                  style={{
+                    color: alt.fundingRate < 0 ? "#22C55E99" : "#EF444499",
+                  }}
+                >
+                  {alt.fundingRate < 0 ? "✓ Negativo" : "✗ Positivo"}
+                </div>
+              </div>
+
+              {/* LSR */}
+              <div
+                className="rounded px-2 py-1.5"
+                style={{
+                  background:
+                    alt.smartMoney.lsr !== null && alt.smartMoney.lsr < 0.5
+                      ? "rgba(34,197,94,0.08)"
+                      : alt.smartMoney.lsr === null
+                        ? "rgba(148,163,184,0.06)"
+                        : "rgba(239,68,68,0.08)",
+                  border:
+                    alt.smartMoney.lsr !== null && alt.smartMoney.lsr < 0.5
+                      ? "1px solid rgba(34,197,94,0.3)"
+                      : alt.smartMoney.lsr === null
+                        ? "1px solid rgba(148,163,184,0.2)"
+                        : "1px solid rgba(239,68,68,0.3)",
+                }}
+              >
+                <div className="text-xs mb-0.5" style={{ color: "#9AA7B6" }}>
+                  LSR (L/S Ratio)
+                </div>
+                <div
+                  className="text-xs font-bold font-mono"
+                  style={{
+                    color:
+                      alt.smartMoney.lsr === null
+                        ? "#9AA7B6"
+                        : alt.smartMoney.lsr < 0.4
+                          ? "#22C55E"
+                          : alt.smartMoney.lsr < 0.5
+                            ? "#EAB308"
+                            : "#EF4444",
+                  }}
+                >
+                  {alt.smartMoney.lsr !== null
+                    ? alt.smartMoney.lsr.toFixed(2)
+                    : "—"}
+                </div>
+                <div
+                  className="text-xs"
+                  style={{
+                    color:
+                      alt.smartMoney.lsr !== null && alt.smartMoney.lsr < 0.5
+                        ? "#22C55E99"
+                        : "#9AA7B699",
+                  }}
+                >
+                  {alt.smartMoney.lsr === null
+                    ? "n/d"
+                    : alt.smartMoney.lsr < 0.35
+                      ? "✓ Muito vendido"
+                      : alt.smartMoney.lsr < 0.5
+                        ? "✓ Vendido"
+                        : "✗ Equilibrado"}
+                </div>
+              </div>
+
+              {/* Range 15m */}
+              <div
+                className="rounded px-2 py-1.5"
+                style={{
+                  background:
+                    alt.smartMoney.range15m >= 4
+                      ? "rgba(34,197,94,0.08)"
+                      : alt.smartMoney.range15m === 3
+                        ? "rgba(234,179,8,0.08)"
+                        : "rgba(148,163,184,0.06)",
+                  border:
+                    alt.smartMoney.range15m >= 4
+                      ? "1px solid rgba(34,197,94,0.3)"
+                      : alt.smartMoney.range15m === 3
+                        ? "1px solid rgba(234,179,8,0.3)"
+                        : "1px solid rgba(148,163,184,0.2)",
+                }}
+              >
+                <div className="text-xs mb-0.5" style={{ color: "#9AA7B6" }}>
+                  Range 15m
+                </div>
+                <div className="flex items-center gap-0.5">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <span
+                      key={n}
+                      className="inline-block w-2.5 h-2.5 rounded-sm"
+                      style={{
+                        background:
+                          n <= alt.smartMoney!.range15m
+                            ? alt.smartMoney!.range15m >= 4
+                              ? "#22C55E"
+                              : alt.smartMoney!.range15m === 3
+                                ? "#EAB308"
+                                : "#9AA7B6"
+                            : "#1F2A3A",
+                      }}
+                    />
+                  ))}
+                </div>
+                <div
+                  className="text-xs mt-0.5"
+                  style={{
+                    color:
+                      alt.smartMoney.range15m >= 4
+                        ? "#22C55E99"
+                        : alt.smartMoney.range15m === 3
+                          ? "#EAB30899"
+                          : "#9AA7B699",
+                  }}
+                >
+                  {alt.smartMoney.range15m >= 4
+                    ? "✓ Acumulação"
+                    : alt.smartMoney.range15m === 3
+                      ? "~ Comprimindo"
+                      : "✗ Expansão"}
+                </div>
+              </div>
+
+              {/* exp_btc */}
+              <div
+                className="rounded px-2 py-1.5"
+                style={{
+                  background:
+                    alt.smartMoney.expBtcCount >= 2
+                      ? "rgba(34,197,94,0.08)"
+                      : alt.smartMoney.expBtcCount === 1
+                        ? "rgba(234,179,8,0.08)"
+                        : "rgba(239,68,68,0.08)",
+                  border:
+                    alt.smartMoney.expBtcCount >= 2
+                      ? "1px solid rgba(34,197,94,0.3)"
+                      : alt.smartMoney.expBtcCount === 1
+                        ? "1px solid rgba(234,179,8,0.3)"
+                        : "1px solid rgba(239,68,68,0.3)",
+                }}
+              >
+                <div className="text-xs mb-0.5" style={{ color: "#9AA7B6" }}>
+                  exp_btc
+                </div>
+                <div
+                  className="text-xs font-bold"
+                  style={{
+                    color:
+                      alt.smartMoney.expBtcCount >= 2
+                        ? "#22C55E"
+                        : alt.smartMoney.expBtcCount === 1
+                          ? "#EAB308"
+                          : "#EF4444",
+                  }}
+                >
+                  {alt.smartMoney.expBtcCount}/3 TFs
+                </div>
+                <div
+                  className="text-xs"
+                  style={{
+                    color:
+                      alt.smartMoney.expBtcCount >= 2
+                        ? "#22C55E99"
+                        : "#9AA7B699",
+                  }}
+                >
+                  {alt.smartMoney.expBtcTFs.length > 0
+                    ? alt.smartMoney.expBtcTFs.join(", ")
+                    : "Nenhum"}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </motion.div>
   );
@@ -553,11 +794,25 @@ export function AltcoinScanner({ altcoins, loading }: AltcoinScannerProps) {
                   >
                     <CoinAvatar symbol={alt.symbol} />
                     <div>
-                      <div
-                        className="text-xs font-bold"
-                        style={{ color: "#E7EEF8" }}
-                      >
-                        {alt.symbol}
+                      <div className="flex items-center gap-1">
+                        <span
+                          className="text-xs font-bold"
+                          style={{ color: "#E7EEF8" }}
+                        >
+                          {alt.symbol}
+                        </span>
+                        {alt.smartMoney?.isSmartMoneySetup && (
+                          <span
+                            className="text-xs px-1 rounded font-bold"
+                            style={{
+                              background: "rgba(34,197,94,0.15)",
+                              color: "#22C55E",
+                              fontSize: 9,
+                            }}
+                          >
+                            SM
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs" style={{ color: "#9AA7B6" }}>
                         {formatVolume(alt.volume24h)}
