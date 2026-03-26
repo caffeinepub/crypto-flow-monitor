@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { BTCChart } from "./BTCChart";
 
 interface OrderEntry {
   id: string;
@@ -700,6 +701,9 @@ export function OrderFlowTab() {
 
   return (
     <div className="space-y-4">
+      {/* BTC Chart */}
+      <BTCChart />
+
       {/* Header */}
       <div
         className="rounded-2xl p-4"
