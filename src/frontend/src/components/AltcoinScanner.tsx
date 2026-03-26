@@ -29,6 +29,7 @@ interface StructuralResult {
 interface StructuralEntry {
   loading: boolean;
   result: StructuralResult | null;
+  error?: string;
 }
 
 // ── Structural Analysis Algorithms ───────────────────────────────────────────
@@ -333,6 +334,7 @@ interface StructuralPanelProps {
 
 function StructuralPanel({ symbol, entry, onAnalyze }: StructuralPanelProps) {
   const hasResult = entry?.result != null;
+  const hasError = entry?.error != null && !entry.loading && !hasResult;
   const isLoading = entry?.loading === true;
 
   return (
@@ -341,7 +343,7 @@ function StructuralPanel({ symbol, entry, onAnalyze }: StructuralPanelProps) {
       style={{ borderTop: "1px solid #1F2A3A", paddingTop: 10 }}
     >
       {/* Trigger button */}
-      {!hasResult && !isLoading && (
+      {!hasResult && !isLoading && !hasError && (
         <button
           type="button"
           onClick={() => onAnalyze(symbol)}
@@ -381,6 +383,23 @@ function StructuralPanel({ symbol, entry, onAnalyze }: StructuralPanelProps) {
           <span className="text-xs" style={{ color: "#22D3EE" }}>
             Analisando estrutura...
           </span>
+        </div>
+      )}
+
+      {/* Error */}
+      {hasError && (
+        <div className="flex items-center justify-between gap-2 py-1">
+          <span className="text-xs" style={{ color: "#EF4444" }}>
+            ⚠ {entry?.error}
+          </span>
+          <button
+            type="button"
+            onClick={() => onAnalyze(symbol)}
+            className="text-xs hover:opacity-80 transition-opacity"
+            style={{ color: "#22D3EE" }}
+          >
+            Tentar novamente
+          </button>
         </div>
       )}
 
@@ -1226,7 +1245,11 @@ export function AltcoinScanner({ altcoins, loading }: AltcoinScannerProps) {
     } catch {
       setStructuralData((prev) => {
         const next = new Map(prev);
-        next.set(symbol, { loading: false, result: null });
+        next.set(symbol, {
+          loading: false,
+          result: null,
+          error: "Falha ao buscar dados. Tente novamente.",
+        });
         return next;
       });
     }
