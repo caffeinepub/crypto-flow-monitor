@@ -84,6 +84,17 @@ export interface AltcoinOpportunity {
   ma50?: number;
   // Smart Money metrics (available for top 10 enriched assets)
   smartMoney?: SmartMoneyMetrics;
+  // SMC (Smart Money Concepts) data — available for top 10 enriched assets
+  smcData?: {
+    phase: string;
+    btcPhase: string;
+    stopHunt: boolean;
+    bos: boolean;
+    choch: boolean;
+    nearLiquidityZone: boolean;
+    inOrderBlock: boolean;
+    smcScore: number;
+  };
 }
 
 export interface ReversalSignal {
@@ -127,6 +138,9 @@ export interface BTCMetrics {
   volumeSpike: number;
   oiDeltaPct: number;
   reversalDetails: ReversalDetails;
+  // SMC institutional phase analysis
+  btcSMCPhase?: string;
+  btcSMCAnalysis?: import("../utils/smcEngine").SMCAnalysis;
   multiExchange?: {
     fearGreedIndex: number | null;
     fearGreedLabel: string | null;

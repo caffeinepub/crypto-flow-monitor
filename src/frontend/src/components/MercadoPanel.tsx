@@ -20,6 +20,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface MercadoPanelProps {
   isActive: boolean;
+  btcSMCPhase?: string;
 }
 
 interface Ticker {
@@ -231,6 +232,7 @@ function generateFullAnalysis(
   funding: PremiumIndex[],
   fngValue: number,
   fngLabel: string,
+  btcSMCPhase?: string,
 ): FullAnalysis {
   const filtered: ProcessedTicker[] = tickers
     .filter(
@@ -245,7 +247,7 @@ function generateFullAnalysis(
 
   const gainers = [...filtered]
     .sort((a, b) => b.pct - a.pct)
-    .filter((t) => t.pct > 0)
+    .filter((t) => t.pct > 0 && t.pct <= 50)
     .slice(0, 5);
   const losers = [...filtered]
     .sort((a, b) => a.pct - b.pct)
@@ -332,9 +334,10 @@ function generateFullAnalysis(
     if (!sector) continue;
     if (!sectorBuckets[sector])
       sectorBuckets[sector] = { pcts: [], volume: 0, tokens: [] };
-    sectorBuckets[sector].pcts.push(t.pct);
+    if (t.pct <= 50) sectorBuckets[sector].pcts.push(t.pct);
     sectorBuckets[sector].volume += t.quoteVolume;
-    sectorBuckets[sector].tokens.push({ symbol: base, pct: t.pct });
+    if (t.pct <= 50)
+      sectorBuckets[sector].tokens.push({ symbol: base, pct: t.pct });
   }
   const sectors: SectorData[] = Object.entries(sectorBuckets)
     .map(([name, d]) => ({
@@ -370,7 +373,21 @@ function generateFullAnalysis(
       : avgFunding < -0.01
         ? "pressão vendedora acima do normal."
         : "mercado sem desequilíbrio significativo de alavancagem.";
+  const smcPhaseContext =
+    btcSMCPhase === "Acumulação"
+      ? "Instituições absorvendo liquidez. Movimento direcional esperado após compressão."
+      : btcSMCPhase === "Manipulação"
+        ? "Stop hunts ativos. Aguardar confirmação de direção antes de entrar."
+        : btcSMCPhase === "Distribuição Alta"
+          ? "Capital fluindo para cima. Altcoins alinhadas com BTC têm maior probabilidade de continuidade."
+          : btcSMCPhase === "Distribuição Baixa"
+            ? "Pressão vendedora institucional. Priorizar gestão de risco."
+            : null;
+
   const narrative: string[] = [
+    ...(smcPhaseContext
+      ? [`BTC encontra-se em fase de ${btcSMCPhase} — ${smcPhaseContext}`]
+      : []),
     `O Bitcoin opera em ${btcDir} de ${Math.abs(btcPct).toFixed(2)}% nas últimas 24h, concentrando ${btcVolumeShare.toFixed(1)}% do volume total do mercado de futuros. As taxas de financiamento sugerem ${fundingBias}, com média de ${avgFunding.toFixed(4)}% — ${fundingEndNote}`,
     `A amplitude do mercado indica ${breadthPct}% dos ativos em alta frente a ${100 - breadthPct}% em queda. O índice Fear & Greed está em ${fngValue} (${fngLabel}), refletindo o sentimento geral como ${sentimentLabel.toLowerCase()}. O sentimento composto aponta para um ambiente ${momentum}, com score de ${sentimentScore.toFixed(0)}/100.`,
     sectors.length > 0
@@ -607,7 +624,7 @@ function AnalyzingOverlay() {
 
 // ─── Main Component ────────────────────────────────────────────────────────
 
-export function MercadoPanel({ isActive }: MercadoPanelProps) {
+export function MercadoPanel({ isActive, btcSMCPhase }: MercadoPanelProps) {
   const [analysis, setAnalysis] = useState<FullAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [tabLoading, setTabLoading] = useState(false);
@@ -616,43 +633,52 @@ export function MercadoPanel({ isActive }: MercadoPanelProps) {
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevActiveRef = useRef(false);
 
-  const fetchData = useCallback(async (fromTabOpen = false) => {
-    if (fromTabOpen) setTabLoading(true);
-    else setLoading(true);
-    setError(null);
-    try {
-      const [tickersRes, fundingRes, fngRes] = await Promise.all([
-        fetch("https://fapi.binance.com/fapi/v1/ticker/24hr"),
-        fetch("https://fapi.binance.com/fapi/v1/premiumIndex"),
-        fetch("https://api.alternative.me/fng/?limit=1"),
-      ]);
+  const fetchData = useCallback(
+    async (fromTabOpen = false) => {
+      if (fromTabOpen) setTabLoading(true);
+      else setLoading(true);
+      setError(null);
+      try {
+        const [tickersRes, fundingRes, fngRes] = await Promise.all([
+          fetch("https://fapi.binance.com/fapi/v1/ticker/24hr"),
+          fetch("https://fapi.binance.com/fapi/v1/premiumIndex"),
+          fetch("https://api.alternative.me/fng/?limit=1"),
+        ]);
 
-      if (!tickersRes.ok || !fundingRes.ok)
-        throw new Error("Falha ao carregar dados da Binance");
+        if (!tickersRes.ok || !fundingRes.ok)
+          throw new Error("Falha ao carregar dados da Binance");
 
-      const [tickers, funding, fngData]: [
-        Ticker[],
-        PremiumIndex[],
-        FngResponse,
-      ] = await Promise.all([
-        tickersRes.json(),
-        fundingRes.json(),
-        fngRes.json(),
-      ]);
+        const [tickers, funding, fngData]: [
+          Ticker[],
+          PremiumIndex[],
+          FngResponse,
+        ] = await Promise.all([
+          tickersRes.json(),
+          fundingRes.json(),
+          fngRes.json(),
+        ]);
 
-      const fngValue = Number.parseInt(fngData?.data?.[0]?.value ?? "50");
-      const fngLabel = fngData?.data?.[0]?.value_classification ?? "Neutro";
+        const fngValue = Number.parseInt(fngData?.data?.[0]?.value ?? "50");
+        const fngLabel = fngData?.data?.[0]?.value_classification ?? "Neutro";
 
-      const result = generateFullAnalysis(tickers, funding, fngValue, fngLabel);
-      setAnalysis(result);
-      setCountdown(REFRESH_INTERVAL);
-    } catch (e: any) {
-      setError(e.message ?? "Erro desconhecido");
-    } finally {
-      setLoading(false);
-      setTabLoading(false);
-    }
-  }, []);
+        const result = generateFullAnalysis(
+          tickers,
+          funding,
+          fngValue,
+          fngLabel,
+          btcSMCPhase,
+        );
+        setAnalysis(result);
+        setCountdown(REFRESH_INTERVAL);
+      } catch (e: any) {
+        setError(e.message ?? "Erro desconhecido");
+      } finally {
+        setLoading(false);
+        setTabLoading(false);
+      }
+    },
+    [btcSMCPhase],
+  );
 
   // Initial fetch
   useEffect(() => {

@@ -15,6 +15,8 @@ import {
   calculateStopLoss,
   calculateTakeProfits,
 } from "../utils/calculations";
+import { analyzeSMC, computeSMCScore } from "../utils/smcEngine";
+import type { Candle as SMCCandle } from "../utils/smcEngine";
 import { fetchMultiExchangeData } from "./useMultiExchangeData";
 
 const BASE = "https://fapi.binance.com";
@@ -913,6 +915,37 @@ export function useBinanceData(interval: Interval = "1h") {
         coinGeckoBTCVolume24h: multiExchangeData.coinGeckoBTCVolume24h,
       });
 
+      // SMC analysis for BTC
+      const btcCandles1h: SMCCandle[] = klines1h.map((k) => ({
+        open: k.open,
+        high: k.high,
+        low: k.low,
+        close: k.close,
+        volume: k.volume,
+      }));
+      const btcCandles15m: SMCCandle[] = klines15m.map((k) => ({
+        open: k.open,
+        high: k.high,
+        low: k.low,
+        close: k.close,
+        volume: k.volume,
+      }));
+      const btcCandles4h: SMCCandle[] = klines4h.map((k) => ({
+        open: k.open,
+        high: k.high,
+        low: k.low,
+        close: k.close,
+        volume: k.volume,
+      }));
+      const btcSMC1h = analyzeSMC(btcCandles1h);
+      const _btcSMC15m = analyzeSMC(btcCandles15m);
+      const btcSMC4h = analyzeSMC(btcCandles4h);
+      // Primary BTC phase from 1h analysis, confirmed by 4h
+      const btcSMCPhase =
+        btcSMC4h.confidence > btcSMC1h.confidence
+          ? btcSMC4h.phase
+          : btcSMC1h.phase;
+
       setBtcMetrics({
         price,
         priceChange24h: btcChange,
@@ -930,6 +963,8 @@ export function useBinanceData(interval: Interval = "1h") {
         volumeSpike,
         oiDeltaPct,
         reversalDetails,
+        btcSMCPhase,
+        btcSMCAnalysis: btcSMC1h,
         multiExchange: {
           fearGreedIndex: multiExchangeData.fearGreedIndex,
           fearGreedLabel: multiExchangeData.fearGreedLabel,
@@ -1105,8 +1140,82 @@ export function useBinanceData(interval: Interval = "1h") {
             alt.fundingRate,
           );
 
+          // SMC analysis for this altcoin (multi-TF)
+          let smcData: AltcoinOpportunity["smcData"] = undefined;
+          try {
+            const altCandles15m: SMCCandle[] = klines15mAlt.map((k) => ({
+              open: k.open,
+              high: k.high,
+              low: k.low,
+              close: k.close,
+              volume: k.volume,
+            }));
+            const altSMC15m = analyzeSMC(altCandles15m);
+            // Fetch 1h and 4h for richer SMC (best effort)
+            let altSMC1h = altSMC15m;
+            let altSMC4h = altSMC15m;
+            try {
+              const klines1hAlt = await fetchKlines(
+                `${alt.symbol}USDT`,
+                "1h",
+                100,
+              );
+              const klines4hAlt = await fetchKlines(
+                `${alt.symbol}USDT`,
+                "4h",
+                100,
+              );
+              altSMC1h = analyzeSMC(
+                klines1hAlt.map((k) => ({
+                  open: k.open,
+                  high: k.high,
+                  low: k.low,
+                  close: k.close,
+                  volume: k.volume,
+                })),
+              );
+              altSMC4h = analyzeSMC(
+                klines4hAlt.map((k) => ({
+                  open: k.open,
+                  high: k.high,
+                  low: k.low,
+                  close: k.close,
+                  volume: k.volume,
+                })),
+              );
+            } catch {
+              /* use 15m fallback */
+            }
+
+            const smcScore = computeSMCScore(
+              altSMC15m,
+              altSMC1h,
+              altSMC4h,
+              btcSMCPhase,
+            );
+            smcData = {
+              phase: altSMC1h.phase,
+              btcPhase: btcSMCPhase,
+              stopHunt: altSMC15m.stopHunt || altSMC1h.stopHunt,
+              bos: altSMC1h.bos,
+              choch: altSMC1h.choch,
+              nearLiquidityZone: altSMC1h.liquidityZones.length > 0,
+              inOrderBlock: altSMC1h.orderBlocks.length > 0,
+              smcScore,
+            };
+          } catch {
+            /* smcData stays undefined */
+          }
+
+          // Final score: legacy 15% + SMC 85%
+          const legacyScore = alt.score;
+          const finalScore = smcData
+            ? Math.round(legacyScore * 0.15 + smcData.smcScore * 0.85)
+            : legacyScore;
+
           return {
             ...alt,
+            score: finalScore,
             klines: klines15mAlt,
             resistanceLevels,
             tp1,
@@ -1118,6 +1227,7 @@ export function useBinanceData(interval: Interval = "1h") {
             ma20,
             ma50,
             smartMoney,
+            smcData,
           };
         }),
       );

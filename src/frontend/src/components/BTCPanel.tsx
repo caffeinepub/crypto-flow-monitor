@@ -117,6 +117,44 @@ export function BTCPanel({ metrics, loading }: BTCPanelProps) {
         )}
       </div>
 
+      {metrics?.btcSMCPhase && (
+        <div className="mb-3 flex items-center gap-2">
+          <span
+            className="text-xs font-bold px-3 py-1.5 rounded-full"
+            style={{
+              background:
+                metrics.btcSMCPhase === "Distribuição Alta"
+                  ? "rgba(34,197,94,0.15)"
+                  : metrics.btcSMCPhase === "Distribuição Baixa"
+                    ? "rgba(239,68,68,0.15)"
+                    : metrics.btcSMCPhase === "Manipulação"
+                      ? "rgba(245,158,11,0.15)"
+                      : "rgba(34,211,238,0.15)",
+              color:
+                metrics.btcSMCPhase === "Distribuição Alta"
+                  ? "#22C55E"
+                  : metrics.btcSMCPhase === "Distribuição Baixa"
+                    ? "#EF4444"
+                    : metrics.btcSMCPhase === "Manipulação"
+                      ? "#F59E0B"
+                      : "#22D3EE",
+              border: `1px solid ${
+                metrics.btcSMCPhase === "Distribuição Alta"
+                  ? "rgba(34,197,94,0.35)"
+                  : metrics.btcSMCPhase === "Distribuição Baixa"
+                    ? "rgba(239,68,68,0.35)"
+                    : metrics.btcSMCPhase === "Manipulação"
+                      ? "rgba(245,158,11,0.35)"
+                      : "rgba(34,211,238,0.35)"
+              }`,
+            }}
+            data-ocid="btc.smc_phase.panel"
+          >
+            ⚡ Fase Institucional: {metrics.btcSMCPhase}
+          </span>
+        </div>
+      )}
+
       <div className="mb-4">
         <ReversalScore details={reversalDetails} />
       </div>

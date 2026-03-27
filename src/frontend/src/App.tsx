@@ -45,7 +45,10 @@ function Dashboard() {
         <main className="max-w-[1600px] mx-auto px-4 py-4">
           {/* 1 - Análise do Mercado */}
           <div style={{ display: activeTab === "market" ? "block" : "none" }}>
-            <MercadoPanel isActive={activeTab === "market"} />
+            <MercadoPanel
+              isActive={activeTab === "market"}
+              btcSMCPhase={btcMetrics?.btcSMCPhase}
+            />
           </div>
 
           {/* 2 - BTC Fluxo de Capital */}

@@ -1,6 +1,6 @@
 import { Activity, ChevronDown, ChevronUp } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { AltcoinOpportunity } from "../types/binance";
 import { loadUiState, saveUiState } from "../utils/binanceCycleStorage";
 import {
@@ -8,6 +8,7 @@ import {
   formatPrice,
   formatVolume,
 } from "../utils/calculations";
+import { analyzeSMC } from "../utils/smcEngine";
 
 // ── Structural Analysis Types ─────────────────────────────────────────────────
 
@@ -24,6 +25,12 @@ interface StructuralResult {
   consolidatedScore: number;
   label: string;
   summary: string;
+  smcPhase: string;
+  stopHuntDetected: boolean;
+  bosDetected: boolean;
+  chochDetected: boolean;
+  fvgCount: number;
+  orderBlockCount: number;
 }
 
 interface StructuralEntry {
@@ -250,10 +257,12 @@ async function runStructuralAnalysis(
 ): Promise<StructuralResult> {
   const TFS = ["15m", "1h", "4h"] as const;
   const weights: Record<string, number> = { "15m": 0.2, "1h": 0.4, "4h": 0.4 };
+  // Ensure symbol has USDT suffix for Binance futures API
+  const fullSymbol = symbol.endsWith("USDT") ? symbol : `${symbol}USDT`;
 
   const results = await Promise.all(
     TFS.map(async (tf) => {
-      const candles = await fetchKlines(symbol, tf);
+      const candles = await fetchKlines(fullSymbol, tf);
       const structure = detectMarketStructure(candles);
       const candlePattern = detectCandlePattern(candles);
       const classicPattern = detectClassicPattern(candles);
@@ -309,7 +318,44 @@ async function runStructuralAnalysis(
     }
   }
 
-  return { tfs: results, consolidatedScore: rounded, label, summary };
+  // SMC analysis across timeframes
+  let smcPhase = "Acumulação";
+  let stopHuntDetected = false;
+  let bosDetected = false;
+  let chochDetected = false;
+  let fvgCount = 0;
+  let orderBlockCount = 0;
+  try {
+    const smcResults = await Promise.all(
+      TFS.map(async (tf) => {
+        const candles = await fetchKlines(fullSymbol, tf);
+        return analyzeSMC(candles);
+      }),
+    );
+    // Use 1h as primary SMC phase
+    const smc1h = smcResults[1];
+    smcPhase = smc1h.phase;
+    stopHuntDetected = smcResults.some((r) => r.stopHunt);
+    bosDetected = smcResults.some((r) => r.bos);
+    chochDetected = smcResults.some((r) => r.choch);
+    fvgCount = smcResults.reduce((s, r) => s + r.fvgs.length, 0);
+    orderBlockCount = smcResults.reduce((s, r) => s + r.orderBlocks.length, 0);
+  } catch {
+    /* SMC data unavailable */
+  }
+
+  return {
+    tfs: results,
+    consolidatedScore: rounded,
+    label,
+    summary,
+    smcPhase,
+    stopHuntDetected,
+    bosDetected,
+    chochDetected,
+    fvgCount,
+    orderBlockCount,
+  };
 }
 
 // ── Structural Analysis Panel ─────────────────────────────────────────────────
@@ -524,6 +570,110 @@ function StructuralPanel({ symbol, entry, onAnalyze }: StructuralPanelProps) {
             <p className="text-xs leading-relaxed" style={{ color: "#9AA7B6" }}>
               {entry.result.summary}
             </p>
+          </div>
+
+          {/* SMC Signals Section */}
+          <div className="mt-2 pt-2" style={{ borderTop: "1px solid #1F2A3A" }}>
+            <div
+              className="text-xs font-bold uppercase tracking-wider mb-2"
+              style={{ color: "#F59E0B" }}
+            >
+              ⚡ SMC — Smart Money
+            </div>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {/* Phase badge */}
+              <span
+                className="text-xs font-semibold px-2 py-0.5 rounded"
+                style={{
+                  background:
+                    entry.result.smcPhase === "Distribuição Alta"
+                      ? "rgba(34,197,94,0.15)"
+                      : entry.result.smcPhase === "Distribuição Baixa"
+                        ? "rgba(239,68,68,0.15)"
+                        : entry.result.smcPhase === "Manipulação"
+                          ? "rgba(245,158,11,0.15)"
+                          : "rgba(34,211,238,0.15)",
+                  color:
+                    entry.result.smcPhase === "Distribuição Alta"
+                      ? "#22C55E"
+                      : entry.result.smcPhase === "Distribuição Baixa"
+                        ? "#EF4444"
+                        : entry.result.smcPhase === "Manipulação"
+                          ? "#F59E0B"
+                          : "#22D3EE",
+                  border: `1px solid ${
+                    entry.result.smcPhase === "Distribuição Alta"
+                      ? "rgba(34,197,94,0.3)"
+                      : entry.result.smcPhase === "Distribuição Baixa"
+                        ? "rgba(239,68,68,0.3)"
+                        : entry.result.smcPhase === "Manipulação"
+                          ? "rgba(245,158,11,0.3)"
+                          : "rgba(34,211,238,0.3)"
+                  }`,
+                }}
+              >
+                {entry.result.smcPhase}
+              </span>
+              {entry.result.stopHuntDetected && (
+                <span
+                  className="text-xs font-semibold px-2 py-0.5 rounded"
+                  style={{
+                    background: "rgba(245,158,11,0.15)",
+                    color: "#F59E0B",
+                    border: "1px solid rgba(245,158,11,0.3)",
+                  }}
+                >
+                  🎯 Stop Hunt
+                </span>
+              )}
+              {entry.result.bosDetected && (
+                <span
+                  className="text-xs font-semibold px-2 py-0.5 rounded"
+                  style={{
+                    background: "rgba(34,197,94,0.15)",
+                    color: "#22C55E",
+                    border: "1px solid rgba(34,197,94,0.3)",
+                  }}
+                >
+                  📈 BOS
+                </span>
+              )}
+              {entry.result.chochDetected && (
+                <span
+                  className="text-xs font-semibold px-2 py-0.5 rounded"
+                  style={{
+                    background: "rgba(168,85,247,0.15)",
+                    color: "#A855F7",
+                    border: "1px solid rgba(168,85,247,0.3)",
+                  }}
+                >
+                  🔄 CHoCH
+                </span>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <span className="text-xs" style={{ color: "#9AA7B6" }}>
+                FVGs:{" "}
+                <span
+                  style={{
+                    color: entry.result.fvgCount > 0 ? "#22D3EE" : "#6B7A8D",
+                  }}
+                >
+                  {entry.result.fvgCount}
+                </span>
+              </span>
+              <span className="text-xs" style={{ color: "#9AA7B6" }}>
+                Order Blocks:{" "}
+                <span
+                  style={{
+                    color:
+                      entry.result.orderBlockCount > 0 ? "#22D3EE" : "#6B7A8D",
+                  }}
+                >
+                  {entry.result.orderBlockCount}
+                </span>
+              </span>
+            </div>
           </div>
         </motion.div>
       )}
@@ -1218,6 +1368,7 @@ export function AltcoinScanner({ altcoins, loading }: AltcoinScannerProps) {
   const [expandedSymbol, setExpandedSymbol] = useState<string | null>(() =>
     loadUiState<string | null>("scanner_expanded", null),
   );
+  const altcoinCache = useRef<Map<string, AltcoinOpportunity>>(new Map());
 
   const [structuralData, setStructuralData] = useState<
     Map<string, StructuralEntry>
@@ -1253,6 +1404,14 @@ export function AltcoinScanner({ altcoins, loading }: AltcoinScannerProps) {
         return next;
       });
     }
+  }
+
+  // Update altcoin cache and compute display list (keeps expanded card visible even if it drops off list)
+  for (const a of altcoins) altcoinCache.current.set(a.symbol, a);
+  let displayList = altcoins;
+  if (expandedSymbol && !altcoins.find((a) => a.symbol === expandedSymbol)) {
+    const cached = altcoinCache.current.get(expandedSymbol);
+    if (cached) displayList = [...altcoins, cached];
   }
 
   // Only show skeleton on initial load (no data yet)
@@ -1339,7 +1498,7 @@ export function AltcoinScanner({ altcoins, loading }: AltcoinScannerProps) {
           </div>
         ) : (
           <div className="p-2 space-y-1">
-            {altcoins.map((alt, i) => {
+            {displayList.map((alt, i) => {
               const s = getScoreStyle(alt.score);
               const isExpanded = expandedSymbol === alt.symbol;
               return (
@@ -1353,12 +1512,13 @@ export function AltcoinScanner({ altcoins, loading }: AltcoinScannerProps) {
                   }}
                   data-ocid={`scanner.item.${i + 1}`}
                 >
-                  <motion.div
-                    initial={{ opacity: 0, x: 10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.03, duration: 0.3 }}
+                  <div
                     className="grid grid-cols-[auto_1fr_auto_auto_auto_auto_auto] gap-2 items-center px-3 py-2 cursor-pointer transition-all hover:bg-white/5"
                     onClick={() => handleToggle(alt.symbol, isExpanded)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ")
+                        handleToggle(alt.symbol, isExpanded);
+                    }}
                     data-ocid={`scanner.item.toggle.${i + 1}`}
                   >
                     <CoinAvatar symbol={alt.symbol} />
@@ -1442,7 +1602,7 @@ export function AltcoinScanner({ altcoins, loading }: AltcoinScannerProps) {
                         />
                       )}
                     </div>
-                  </motion.div>
+                  </div>
 
                   <AnimatePresence>
                     {isExpanded && (
