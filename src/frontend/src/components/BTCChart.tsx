@@ -29,6 +29,11 @@ interface AccumZone {
   priceMax: number;
   strength: number;
   totalVol: number;
+  swept?: boolean;
+}
+
+function getZoneKey(zone: AccumZone): string {
+  return Math.round((zone.priceMin + zone.priceMax) / 2).toString();
 }
 
 function calcMA(klines: KlineData[], period: number): number[] {
@@ -220,14 +225,15 @@ function drawChart(
   }
 
   // === LAYER 1: Accumulation ===
-  if (overlays.showAccum && overlays.accumZones.length > 0) {
+  const activeAccumZones = overlays.accumZones.filter((z) => !z.swept);
+  if (overlays.showAccum && activeAccumZones.length > 0) {
     const maxStrength = Math.max(
-      ...overlays.accumZones.map((z) => z.strength),
+      ...activeAccumZones.map((z) => z.strength),
       0.01,
     );
     const maxBarW = 55;
 
-    for (const zone of overlays.accumZones) {
+    for (const zone of activeAccumZones) {
       const y1 = toY(zone.priceMax);
       const y2 = toY(zone.priceMin);
       const barH = Math.max(1, y2 - y1);
@@ -438,6 +444,7 @@ export function BTCChart() {
   const { klines, loading } = useBTCChart(interval);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const sweptCentersRef = useRef<Set<string>>(new Set());
 
   const [showSR, setShowSR] = useState(true);
   const [showAccum, setShowAccum] = useState(true);
@@ -472,8 +479,33 @@ export function BTCChart() {
     const ma20 = calcMA(klines, 20);
     const ma50 = calcMA(klines, 50);
     setSrLevels(detectSRLevels(klines, ma20, ma50));
-    setAccumZones(detectAccumZones(klines));
+    const newZones = detectAccumZones(klines).map((z) => ({
+      ...z,
+      swept: sweptCentersRef.current.has(getZoneKey(z)),
+    }));
+    setAccumZones(newZones);
   }, [klines]);
+
+  // Mark zones as swept when price crosses into them
+  useEffect(() => {
+    if (currentPrice <= 0) return;
+    setAccumZones((prev) => {
+      let changed = false;
+      const updated = prev.map((zone) => {
+        if (
+          !zone.swept &&
+          currentPrice >= zone.priceMin &&
+          currentPrice <= zone.priceMax
+        ) {
+          sweptCentersRef.current.add(getZoneKey(zone));
+          changed = true;
+          return { ...zone, swept: true };
+        }
+        return zone;
+      });
+      return changed ? updated : prev;
+    });
+  }, [currentPrice]);
 
   useEffect(() => {
     fetchLargeOrders(250_000).then(setLargeOrders);
@@ -626,7 +658,10 @@ export function BTCChart() {
             <button
               type="button"
               key={iv.value}
-              onClick={() => setChartInterval(iv.value)}
+              onClick={() => {
+                sweptCentersRef.current.clear();
+                setChartInterval(iv.value);
+              }}
               className="px-2.5 py-1 rounded text-xs font-medium transition-all"
               style={{
                 background:

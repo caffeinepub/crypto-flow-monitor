@@ -39,6 +39,8 @@ export interface SimulatedTrade {
   score: number;
   // Last time the price was refreshed from Binance
   lastPriceAt?: number;
+  // Set if a danger pattern was detected while trade was active
+  dangerPatternWarning?: string;
 }
 
 export interface PatternSummary {

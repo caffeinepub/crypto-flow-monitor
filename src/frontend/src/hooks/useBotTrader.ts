@@ -9,6 +9,10 @@ import {
   loadBotState,
   saveBotState,
 } from "../utils/botTraderStorage";
+import {
+  checkDangerPatterns,
+  triggerStopLossAnalysis,
+} from "../utils/stopLossLearner";
 
 const MODALITIES: ModalityId[] = [
   "scalp",
@@ -645,6 +649,11 @@ export function useBotTrader(
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  const [dangerWarnings, setDangerWarnings] = useState<Record<string, string>>(
+    {},
+  );
+  const lastDangerCheckRef = useRef<Record<string, number>>({});
+
   const altcoinsRef = useRef(altcoins);
   altcoinsRef.current = altcoins;
 
@@ -702,6 +711,9 @@ export function useBotTrader(
       const symbolsToFetch = getActiveSymbols();
       const livePrices = await fetchLivePrices(symbolsToFetch);
 
+      // Capture trades before update to detect new SL_LOSS events
+      const prevActiveTrades = { ...stateRef.current.activeTrades };
+
       setState((prev) => {
         const needsUpdate = MODALITIES.some((m) => {
           const t = prev.activeTrades[m];
@@ -722,9 +734,121 @@ export function useBotTrader(
           btcMetricsRef.current,
           livePrices,
         );
+
+        // Detect SL_LOSS for newly closed trades and trigger pattern analysis
+        for (const mod of MODALITIES) {
+          const prevTrade = prevActiveTrades[mod];
+          const nextTrade = next.activeTrades[mod];
+          // trade was active and is now gone (closed)
+          if (prevTrade && !nextTrade) {
+            // find the closed trade in recent history
+            const closed =
+              next.recentByModality[mod as ModalityId]?.slice(-1)[0];
+            if (closed?.closeReason === "SL_LOSS") {
+              triggerStopLossAnalysis(
+                closed.symbol,
+                closed.modality,
+                closed.entry,
+                closed.openTime,
+              ).catch(() => {});
+            }
+          }
+        }
+
         saveBotState(next);
         return next;
       });
+
+      // Danger pattern check for active trades (throttled: once per 60s per symbol)
+      const now = Date.now();
+      for (const mod of MODALITIES) {
+        const trade = stateRef.current.activeTrades[mod];
+        if (!trade) continue;
+        const lastCheck = lastDangerCheckRef.current[trade.symbol] ?? 0;
+        if (now - lastCheck < 60000) continue;
+        lastDangerCheckRef.current[trade.symbol] = now;
+
+        checkDangerPatterns(trade.symbol)
+          .then(({ matchScore, warning }) => {
+            if (matchScore >= 60 && warning) {
+              setDangerWarnings((prev) => ({
+                ...prev,
+                [trade.symbol]: warning,
+              }));
+
+              const cfg = MODALITY_CONFIG[mod as ModalityId];
+              setState((prev) => {
+                const currentTrade = prev.activeTrades[mod as ModalityId];
+                if (!currentTrade) return prev;
+
+                const currentPrice = currentTrade.currentPrice;
+                const closedTrade: SimulatedTrade = {
+                  ...currentTrade,
+                  status: "CLOSED",
+                  closeReason: cfg.allowReversal ? "BOT_REVERSE" : "BOT_CLOSE",
+                  closedPrice: currentPrice,
+                  closeTime: Date.now(),
+                  botLog: warning,
+                  dangerPatternWarning: warning,
+                };
+
+                let tradeHistory = [closedTrade, ...prev.tradeHistory].slice(
+                  0,
+                  200,
+                );
+                let recentByModality = addRecentTrade(
+                  prev.recentByModality,
+                  closedTrade,
+                );
+
+                let activeTrades = {
+                  ...prev.activeTrades,
+                  [mod]: null as SimulatedTrade | null,
+                };
+
+                // For allowReversal modalities, open a SHORT
+                if (cfg.allowReversal) {
+                  const scannerAltcoin = altcoinsRef.current.find(
+                    (a) => a.symbol === currentTrade.symbol,
+                  );
+                  if (scannerAltcoin) {
+                    const targets = computeTargets(
+                      mod as ModalityId,
+                      currentPrice,
+                      "SHORT",
+                    );
+                    activeTrades[mod as ModalityId] = {
+                      id: makeId(),
+                      modality: mod as ModalityId,
+                      symbol: currentTrade.symbol,
+                      direction: "SHORT",
+                      entry: currentPrice,
+                      currentPrice,
+                      ...targets,
+                      status: "ACTIVE",
+                      openTime: Date.now(),
+                      pnlPct: 0,
+                      botLog: `SHORT aberto por padrão de risco: ${warning}`,
+                      partialsTaken: 0,
+                      score: scannerAltcoin.score,
+                      lastPriceAt: Date.now(),
+                    };
+                  }
+                }
+
+                const next = {
+                  ...prev,
+                  activeTrades,
+                  tradeHistory,
+                  recentByModality,
+                };
+                saveBotState(next);
+                return next;
+              });
+            }
+          })
+          .catch(() => {});
+      }
     }, 5000);
 
     return () => clearInterval(interval);
@@ -737,5 +861,6 @@ export function useBotTrader(
     tradeHistory: state.tradeHistory,
     recentByModality: state.recentByModality,
     patterns,
+    dangerWarnings,
   };
 }

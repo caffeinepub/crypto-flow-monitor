@@ -1,9 +1,11 @@
 import { Clock, Navigation, Shield, TrendingUp, Zap } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useState } from "react";
 import { MODALITY_CONFIG, useBotTrader } from "../hooks/useBotTrader";
 import type { AltcoinOpportunity, BTCMetrics } from "../types/binance";
 import type { ModalityId, SimulatedTrade } from "../utils/botTraderStorage";
 import { formatPrice } from "../utils/calculations";
+import { loadDangerPatterns } from "../utils/stopLossLearner";
 
 interface BotTraderTabProps {
   altcoins: AltcoinOpportunity[];
@@ -104,7 +106,8 @@ function closeReasonColor(reason: string | undefined): string {
 function ModalityCard({
   mod,
   trade,
-}: { mod: ModalityId; trade: SimulatedTrade | null }) {
+  dangerWarning,
+}: { mod: ModalityId; trade: SimulatedTrade | null; dangerWarning?: string }) {
   const meta = MODALITY_META[mod];
   const Icon = meta.icon;
 
@@ -310,6 +313,21 @@ function ModalityCard({
         <span style={{ color: "#E2E8F0", fontWeight: 700, fontSize: 15 }}>
           {trade.symbol}
         </span>
+        {(dangerWarning || trade.dangerPatternWarning) && (
+          <span
+            style={{
+              background: "rgba(251,146,60,0.15)",
+              border: "1px solid rgba(251,146,60,0.4)",
+              borderRadius: 4,
+              padding: "1px 6px",
+              color: "#FB923C",
+              fontSize: 10,
+              fontWeight: 600,
+            }}
+          >
+            ⚠️ Padrão de risco detectado
+          </span>
+        )}
         <span
           style={{
             background: isLong ? "#22C55E22" : "#EF444422",
@@ -458,10 +476,15 @@ function ModalityCard({
 }
 
 export function BotTraderTab({ altcoins, btcMetrics }: BotTraderTabProps) {
-  const { activeTrades, tradeHistory, patterns } = useBotTrader(
+  const { activeTrades, tradeHistory, patterns, dangerWarnings } = useBotTrader(
     altcoins,
     btcMetrics,
   );
+
+  const [learnedPatternCount, setLearnedPatternCount] = useState(0);
+  useEffect(() => {
+    setLearnedPatternCount(loadDangerPatterns().length);
+  }, []);
 
   return (
     <div
@@ -543,7 +566,16 @@ export function BotTraderTab({ altcoins, btcMetrics }: BotTraderTabProps) {
       >
         <AnimatePresence>
           {MODALITY_ORDER.map((mod) => (
-            <ModalityCard key={mod} mod={mod} trade={activeTrades[mod]} />
+            <ModalityCard
+              key={mod}
+              mod={mod}
+              trade={activeTrades[mod]}
+              dangerWarning={
+                activeTrades[mod]
+                  ? dangerWarnings[activeTrades[mod]!.symbol]
+                  : undefined
+              }
+            />
           ))}
         </AnimatePresence>
       </div>
@@ -840,6 +872,23 @@ export function BotTraderTab({ altcoins, btcMetrics }: BotTraderTabProps) {
           </div>
         )}
       </div>
+      {learnedPatternCount > 0 && (
+        <div
+          style={{
+            background: "#0F1622",
+            border: "1px solid #1F2A3A",
+            borderRadius: 10,
+            padding: "10px 16px",
+            color: "#94A3B8",
+            fontSize: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          🧠 Sistema aprendeu {learnedPatternCount} padrões de stop loss
+        </div>
+      )}
     </div>
   );
 }
