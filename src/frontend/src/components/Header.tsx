@@ -3,6 +3,7 @@ import {
   BarChart3,
   BookOpen,
   Bot,
+  Layers,
   RefreshCw,
   Scan,
   TrendingUp,
@@ -32,6 +33,7 @@ export function Header({
     { id: "liquidacoes", label: "Feed Ao Vivo", icon: Zap },
     { id: "scanner", label: "Altcoin Scanner", icon: Scan },
     { id: "bottrader", label: "Bot Trader", icon: Bot },
+    { id: "setores", label: "Setores", icon: Layers },
   ];
 
   return (

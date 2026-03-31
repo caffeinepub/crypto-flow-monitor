@@ -11,6 +11,7 @@ import { LiquidacoesTab } from "./components/LiquidacoesTab";
 import { MercadoPanel } from "./components/MercadoPanel";
 import { OrderFlowTab } from "./components/OrderFlowTab";
 import { PWAInstallPrompt } from "./components/PWAInstallPrompt";
+import { SectorFlowTab } from "./components/SectorFlowTab";
 import { useBinanceData } from "./hooks/useBinanceData";
 import type { Interval } from "./types/binance";
 import { loadUiState, saveUiState } from "./utils/binanceCycleStorage";
@@ -84,6 +85,11 @@ function Dashboard() {
             style={{ display: activeTab === "bottrader" ? "block" : "none" }}
           >
             <BotTraderTab altcoins={altcoins} btcMetrics={btcMetrics} />
+          </div>
+
+          {/* 7 - Setores */}
+          <div style={{ display: activeTab === "setores" ? "block" : "none" }}>
+            <SectorFlowTab />
           </div>
         </main>
 

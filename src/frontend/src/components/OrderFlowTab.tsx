@@ -85,8 +85,8 @@ function useOrderBookMonitor(
     ws.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
-        const bids: [string, string][] = data.bids || [];
-        const asks: [string, string][] = data.asks || [];
+        const bids: [string, string][] = data.bids || data.b || [];
+        const asks: [string, string][] = data.asks || data.a || [];
         const now = Date.now();
         const mp = marketPriceRef.current;
         if (mp === 0) return;
